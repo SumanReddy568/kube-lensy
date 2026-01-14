@@ -1,7 +1,15 @@
-import { useState } from 'react';
-import { Search, ChevronDown, Server, Box, Layers, Container } from 'lucide-react';
+import { Search, Server, Box, Layers, Container } from 'lucide-react';
 import { FilterState, LogLevel, Cluster, Namespace, Pod } from '@/types/logs';
 import { cn } from '@/lib/utils';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 
 interface FilterPanelProps {
   filters: FilterState;
@@ -11,22 +19,20 @@ interface FilterPanelProps {
   pods: Pod[];
 }
 
-const logLevelConfig: { level: LogLevel; label: string; className: string }[] = [
-  { level: 'error', label: 'Error', className: 'bg-destructive/20 text-destructive border-destructive/30 hover:bg-destructive/30' },
-  { level: 'warn', label: 'Warn', className: 'bg-warning/20 text-warning border-warning/30 hover:bg-warning/30' },
-  { level: 'info', label: 'Info', className: 'bg-info/20 text-info border-info/30 hover:bg-info/30' },
-  { level: 'debug', label: 'Debug', className: 'bg-debug/20 text-debug border-debug/30 hover:bg-debug/30' },
+const logLevelConfig: { level: LogLevel; label: string; className: string; badgeVariant: "default" | "secondary" | "destructive" | "outline" }[] = [
+  { level: 'error', label: 'Error', className: 'text-destructive', badgeVariant: 'destructive' },
+  { level: 'warn', label: 'Warn', className: 'text-warning', badgeVariant: 'secondary' },
+  { level: 'info', label: 'Info', className: 'text-info', badgeVariant: 'default' },
+  { level: 'debug', label: 'Debug', className: 'text-debug', badgeVariant: 'outline' },
 ];
 
 export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pods }: FilterPanelProps) {
-  const [expandedSection, setExpandedSection] = useState<string | null>('cluster');
-
   const filteredNamespaces = namespaces.filter(
     ns => !filters.cluster || ns.cluster === filters.cluster
   );
 
   const filteredPods = pods.filter(
-    pod => 
+    pod =>
       (!filters.cluster || pod.cluster === filters.cluster) &&
       (!filters.namespace || pod.namespace === filters.namespace)
   );
@@ -38,201 +44,165 @@ export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pod
     onFilterChange({ ...filters, levels: newLevels });
   };
 
-  const FilterSection = ({ 
-    id, 
-    icon: Icon, 
-    title, 
-    children 
-  }: { 
-    id: string; 
-    icon: React.ElementType; 
-    title: string; 
-    children: React.ReactNode;
-  }) => (
-    <div className="border-b border-border/50">
-      <button
-        onClick={() => setExpandedSection(expandedSection === id ? null : id)}
-        className="flex items-center justify-between w-full px-4 py-3 text-sm font-medium text-foreground hover:bg-secondary/50 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <Icon className="w-4 h-4 text-primary" />
-          {title}
-        </div>
-        <ChevronDown className={cn(
-          "w-4 h-4 text-muted-foreground transition-transform",
-          expandedSection === id && "rotate-180"
-        )} />
-      </button>
-      {expandedSection === id && (
-        <div className="px-4 pb-3 animate-fade-in">
-          {children}
-        </div>
-      )}
-    </div>
-  );
-
   return (
-    <div className="h-full flex flex-col bg-sidebar border-r border-border">
-      {/* Search */}
-      <div className="p-4 border-b border-border">
-        <div className="relative">
+    <div className="w-full bg-card border-b border-border p-3 flex flex-col gap-3 shadow-sm">
+      <div className="flex flex-wrap items-center gap-4">
+        {/* Search */}
+        <div className="flex-1 min-w-[200px] relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
+          <Input
             placeholder="Search logs..."
             value={filters.search}
             onChange={(e) => onFilterChange({ ...filters, search: e.target.value })}
-            className="w-full pl-10 pr-4 py-2 bg-input border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+            className="pl-9 h-9"
           />
+        </div>
+
+        {/* Cluster Select */}
+        <div className="flex items-center gap-2 min-w-[250px] flex-1">
+          <Server className="w-4 h-4 text-primary shrink-0" />
+          <Select
+            value={filters.cluster || "all-clusters"}
+            onValueChange={(val) => onFilterChange({
+              ...filters,
+              cluster: val === "all-clusters" ? null : val,
+              namespace: null,
+              pod: null,
+              container: null
+            })}
+          >
+            <SelectTrigger className="h-9 w-full">
+              <SelectValue placeholder="Select Cluster" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all-clusters">All Clusters</SelectItem>
+              {clusters.map(cluster => (
+                <SelectItem key={cluster.id} value={cluster.id}>
+                  <div className="flex items-center gap-2 max-w-[400px]">
+                    <span className={cn(
+                      "w-2 h-2 rounded-full shrink-0",
+                      cluster.status === 'connected' ? "bg-success" :
+                        cluster.status === 'error' ? "bg-destructive" : "bg-muted-foreground"
+                    )} />
+                    <span className="truncate">{cluster.name}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Namespace Select */}
+        <div className="flex items-center gap-2 min-w-[200px] flex-1">
+          <Layers className="w-4 h-4 text-primary shrink-0" />
+          <Select
+            value={filters.namespace || "all-namespaces"}
+            disabled={!filters.cluster && clusters.length > 1}
+            onValueChange={(val) => onFilterChange({
+              ...filters,
+              namespace: val === "all-namespaces" ? null : val,
+              pod: null,
+              container: null
+            })}
+          >
+            <SelectTrigger className="h-9 w-full">
+              <SelectValue placeholder="Namespace" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all-namespaces">All Namespaces</SelectItem>
+              {filteredNamespaces.map(ns => (
+                <SelectItem key={`${ns.cluster}-${ns.name}`} value={ns.name}>
+                  <div className="max-w-[300px] truncate">{ns.name}</div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Pod Select */}
+        <div className="flex items-center gap-2 min-w-[250px] flex-1">
+          <Box className="w-4 h-4 text-primary shrink-0" />
+          <Select
+            value={filters.pod || "all-pods"}
+            disabled={!filters.namespace && filteredNamespaces.length > 0}
+            onValueChange={(val) => onFilterChange({
+              ...filters,
+              pod: val === "all-pods" ? null : val,
+              container: null
+            })}
+          >
+            <SelectTrigger className="h-9 w-full">
+              <SelectValue placeholder="Pod" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all-pods">All Pods</SelectItem>
+              {filteredPods.map(pod => (
+                <SelectItem key={`${pod.cluster}-${pod.namespace}-${pod.name}`} value={pod.name}>
+                  <div className="flex items-center justify-between gap-3 w-full max-w-[500px]">
+                    <span className="truncate font-mono text-xs">{pod.name}</span>
+                    <Badge variant={pod.status === 'Running' ? 'default' : 'secondary'} className="text-[10px] px-1 h-4 shrink-0">
+                      {pod.status}
+                    </Badge>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Container Select */}
+        <div className="flex items-center gap-2 min-w-[150px] flex-1">
+          <Container className="w-4 h-4 text-primary shrink-0" />
+          <Select
+            value={filters.container || "all-containers"}
+            disabled={!filters.pod}
+            onValueChange={(val) => onFilterChange({
+              ...filters,
+              container: val === "all-containers" ? null : val
+            })}
+          >
+            <SelectTrigger className="h-9 truncate">
+              <SelectValue placeholder="Container" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all-containers">All Containers</SelectItem>
+              {filters.pod && filteredPods
+                .find(p => p.name === filters.pod)
+                ?.containers.map(container => (
+                  <SelectItem key={container} value={container} className="font-mono text-xs">
+                    {container}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      {/* Log Levels */}
-      <div className="p-4 border-b border-border">
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Log Levels</h3>
-        <div className="flex flex-wrap gap-2">
-          {logLevelConfig.map(({ level, label, className }) => (
+      {/* Log Levels Toolbar */}
+      <div className="flex items-center gap-2 border-t border-border pt-2">
+        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mr-2">Levels:</span>
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          {logLevelConfig.map(({ level, label, badgeVariant }) => (
             <button
               key={level}
               onClick={() => toggleLevel(level)}
               className={cn(
-                "px-3 py-1.5 text-xs font-medium rounded-md border transition-all",
-                filters.levels.includes(level)
-                  ? className
-                  : "bg-secondary/50 text-muted-foreground border-transparent hover:bg-secondary"
+                "transition-all",
+                !filters.levels.includes(level) && "opacity-40 grayscale"
               )}
             >
-              {label}
+              <Badge
+                variant={badgeVariant}
+                className={cn(
+                  "cursor-pointer hover:scale-105 transition-transform px-3 py-1 text-[10px]",
+                  !filters.levels.includes(level) && "bg-muted text-muted-foreground border-transparent"
+                )}
+              >
+                {label}
+              </Badge>
             </button>
           ))}
         </div>
-      </div>
-
-      {/* Expandable Filters */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
-        <FilterSection id="cluster" icon={Server} title="Cluster">
-          <div className="space-y-1">
-            {clusters.map(cluster => (
-              <button
-                key={cluster.id}
-                onClick={() => onFilterChange({ 
-                  ...filters, 
-                  cluster: filters.cluster === cluster.id ? null : cluster.id,
-                  namespace: null,
-                  pod: null,
-                  container: null 
-                })}
-                className={cn(
-                  "flex items-center justify-between w-full px-3 py-2 rounded-md text-sm transition-colors",
-                  filters.cluster === cluster.id
-                    ? "bg-primary/20 text-primary"
-                    : "text-foreground hover:bg-secondary"
-                )}
-              >
-                <span className="truncate">{cluster.name}</span>
-                <span className={cn(
-                  "w-2 h-2 rounded-full",
-                  cluster.status === 'connected' ? "bg-success" : 
-                  cluster.status === 'error' ? "bg-destructive" : "bg-muted-foreground"
-                )} />
-              </button>
-            ))}
-          </div>
-        </FilterSection>
-
-        <FilterSection id="namespace" icon={Layers} title="Namespace">
-          <div className="space-y-1 max-h-48 overflow-y-auto scrollbar-thin">
-            {filteredNamespaces.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-2">Select a cluster first</p>
-            ) : (
-              filteredNamespaces.map(ns => (
-                <button
-                  key={`${ns.cluster}-${ns.name}`}
-                  onClick={() => onFilterChange({ 
-                    ...filters, 
-                    namespace: filters.namespace === ns.name ? null : ns.name,
-                    pod: null,
-                    container: null 
-                  })}
-                  className={cn(
-                    "w-full px-3 py-2 rounded-md text-sm text-left transition-colors truncate",
-                    filters.namespace === ns.name
-                      ? "bg-primary/20 text-primary"
-                      : "text-foreground hover:bg-secondary"
-                  )}
-                >
-                  {ns.name}
-                </button>
-              ))
-            )}
-          </div>
-        </FilterSection>
-
-        <FilterSection id="pod" icon={Box} title="Pod">
-          <div className="space-y-1 max-h-64 overflow-y-auto scrollbar-thin">
-            {filteredPods.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-2">Select a namespace first</p>
-            ) : (
-              filteredPods.map(pod => (
-                <button
-                  key={`${pod.cluster}-${pod.namespace}-${pod.name}`}
-                  onClick={() => onFilterChange({ 
-                    ...filters, 
-                    pod: filters.pod === pod.name ? null : pod.name,
-                    container: null 
-                  })}
-                  className={cn(
-                    "w-full px-3 py-2 rounded-md text-sm text-left transition-colors",
-                    filters.pod === pod.name
-                      ? "bg-primary/20 text-primary"
-                      : "text-foreground hover:bg-secondary"
-                  )}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="truncate font-mono text-xs">{pod.name}</span>
-                    <span className={cn(
-                      "text-[10px] px-1.5 py-0.5 rounded font-medium",
-                      pod.status === 'Running' ? "bg-success/20 text-success" :
-                      pod.status === 'Pending' ? "bg-warning/20 text-warning" :
-                      pod.status === 'Failed' ? "bg-destructive/20 text-destructive" :
-                      "bg-muted text-muted-foreground"
-                    )}>
-                      {pod.status}
-                    </span>
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-        </FilterSection>
-
-        <FilterSection id="container" icon={Container} title="Container">
-          <div className="space-y-1 max-h-32 overflow-y-auto scrollbar-thin">
-            {!filters.pod ? (
-              <p className="text-xs text-muted-foreground py-2">Select a pod first</p>
-            ) : (
-              filteredPods
-                .find(p => p.name === filters.pod)
-                ?.containers.map(container => (
-                  <button
-                    key={container}
-                    onClick={() => onFilterChange({ 
-                      ...filters, 
-                      container: filters.container === container ? null : container 
-                    })}
-                    className={cn(
-                      "w-full px-3 py-2 rounded-md text-sm text-left font-mono transition-colors",
-                      filters.container === container
-                        ? "bg-primary/20 text-primary"
-                        : "text-foreground hover:bg-secondary"
-                    )}
-                  >
-                    {container}
-                  </button>
-                ))
-            )}
-          </div>
-        </FilterSection>
       </div>
     </div>
   );

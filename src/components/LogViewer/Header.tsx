@@ -13,15 +13,15 @@ interface HeaderProps {
   onRetryConnection: () => void;
 }
 
-export function Header({ 
-  filters, 
-  onRefresh, 
-  onClear, 
-  isLive, 
-  connected, 
-  loading, 
-  error, 
-  onRetryConnection 
+export function Header({
+  filters,
+  onRefresh,
+  onClear,
+  isLive,
+  connected,
+  loading,
+  error,
+  onRetryConnection
 }: HeaderProps) {
   const activeFilters = [
     filters.cluster,
@@ -31,57 +31,32 @@ export function Header({
   ].filter(Boolean);
 
   return (
-    <header className="bg-card border-b border-border px-6 py-4">
+    <header className="bg-card border-b border-border px-6 py-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/20 rounded-lg">
-              <Terminal className="w-6 h-6 text-primary" />
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-primary/20 rounded-lg">
+              <Terminal className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-foreground">KubeLog Viewer</h1>
-              <p className="text-sm text-muted-foreground">Real-time Kubernetes log analysis</p>
+              <h1 className="text-lg font-bold text-foreground">KubeLensy</h1>
             </div>
           </div>
 
-          {/* Connection Status */}
-          <ConnectionStatus 
+          <ConnectionStatus
             connected={connected}
             loading={loading}
             error={error}
             onRetry={onRetryConnection}
           />
 
-          {/* Live indicator */}
           {isLive && connected && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-success/20 rounded-full">
-              <span className="w-2 h-2 bg-success rounded-full animate-pulse" />
-              <span className="text-xs font-medium text-success">Streaming</span>
+            <div className="flex items-center gap-2 px-3 py-1 bg-success/15 rounded-full border border-success/30">
+              <span className="w-1.5 h-1.5 bg-success rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
+              <span className="text-[10px] uppercase tracking-wider font-bold text-success">Live Source</span>
             </div>
           )}
         </div>
-
-        {/* Active Filters Summary */}
-        {activeFilters.length > 0 && (
-          <div className="hidden md:flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Filtered by:</span>
-            {filters.cluster && (
-              <span className="px-2 py-1 bg-primary/20 text-primary text-xs rounded-md font-mono">
-                {filters.cluster}
-              </span>
-            )}
-            {filters.namespace && (
-              <span className="px-2 py-1 bg-accent/20 text-accent text-xs rounded-md font-mono">
-                {filters.namespace}
-              </span>
-            )}
-            {filters.pod && (
-              <span className="px-2 py-1 bg-info/20 text-info text-xs rounded-md font-mono truncate max-w-[200px]">
-                {filters.pod}
-              </span>
-            )}
-          </div>
-        )}
 
         {/* Actions */}
         <div className="flex items-center gap-2">

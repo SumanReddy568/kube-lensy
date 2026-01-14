@@ -5,8 +5,6 @@ import { Header } from './Header';
 import { ConnectionBanner } from './ConnectionStatus';
 import { FilterState } from '@/types/logs';
 import { useKubernetes, usePodLogs } from '@/hooks/useKubernetes';
-import { Menu, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 const initialFilters: FilterState = {
   cluster: null,
@@ -20,7 +18,6 @@ const initialFilters: FilterState = {
 export function LogViewer() {
   const [filters, setFilters] = useState<FilterState>(initialFilters);
   const [isLive, setIsLive] = useState(true);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Real Kubernetes connection
   const {
@@ -57,7 +54,13 @@ export function LogViewer() {
 
   const filteredLogs = useMemo(() => {
     return logs.filter(log => {
-      if (filters.cluster && log.cluster !== filters.cluster) return false;
+      // Cluster filtering is usually handled by the backend switch, 
+      // but we keep it here as a safety check if we have multi-cluster data in memory
+      if (filters.cluster && log.cluster !== filters.cluster) {
+        // Only return false if the cluster name is actually different from the connected one
+        const connectedCluster = clusters.find(c => c.status === 'connected')?.id;
+        if (connectedCluster && filters.cluster !== connectedCluster) return false;
+      }
       if (filters.namespace && log.namespace !== filters.namespace) return false;
       if (filters.pod && log.pod !== filters.pod) return false;
       if (filters.container && log.container !== filters.container) return false;
@@ -65,10 +68,10 @@ export function LogViewer() {
       if (filters.search && !log.message.toLowerCase().includes(filters.search.toLowerCase())) return false;
       return true;
     });
-  }, [logs, filters]);
+  }, [logs, filters, clusters]);
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="h-screen flex flex-col bg-background overflow-hidden">
       <Header
         filters={filters}
         onRefresh={refresh}
@@ -85,43 +88,19 @@ export function LogViewer() {
         <ConnectionBanner onRetry={checkConnection} />
       )}
 
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Mobile Sidebar Toggle */}
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="lg:hidden absolute top-4 left-4 z-50 p-2 bg-card border border-border rounded-lg shadow-lg"
-        >
-          {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </button>
+      {/* Horizontal Toolbar */}
+      <FilterPanel
+        filters={filters}
+        onFilterChange={handleFilterChange}
+        clusters={clusters}
+        namespaces={namespaces}
+        pods={pods}
+      />
 
-        {/* Sidebar */}
-        <aside className={cn(
-          "w-72 shrink-0 transition-all duration-300 lg:translate-x-0",
-          "absolute lg:relative z-40 h-full",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        )}>
-          <FilterPanel
-            filters={filters}
-            onFilterChange={handleFilterChange}
-            clusters={clusters}
-            namespaces={namespaces}
-            pods={pods}
-          />
-        </aside>
-
-        {/* Overlay for mobile */}
-        {sidebarOpen && (
-          <div
-            className="lg:hidden fixed inset-0 bg-background/80 backdrop-blur-sm z-30"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
-
-        {/* Main Content */}
-        <main className="flex-1 flex flex-col overflow-hidden relative">
-          <LogList logs={filteredLogs} searchTerm={filters.search} />
-        </main>
-      </div>
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col overflow-hidden relative">
+        <LogList logs={filteredLogs} searchTerm={filters.search} />
+      </main>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Cluster, Namespace, Pod, LogEntry } from '@/types/logs';
 import * as k8sApi from '@/services/kubernetesApi';
 
@@ -21,84 +21,110 @@ export function useKubernetes() {
     pods: [],
   });
 
-  const checkConnection = useCallback(async () => {
-    setState(prev => ({ ...prev, loading: true }));
+  const isInitialMount = useRef(true);
+
+  const checkConnection = useCallback(async (silent = false) => {
+    if (!silent) setState(prev => ({ ...prev, loading: true }));
 
     try {
       const status = await k8sApi.checkConnection();
 
       if (status.connected) {
-        const [clusters, namespaces, pods] = await Promise.all([
-          k8sApi.fetchClusters(),
-          k8sApi.fetchNamespaces(),
-          k8sApi.fetchPods(),
-        ]);
+        // Only fetch full data on initial load or if we were disconnected
+        // This prevents the "every 10 seconds" refresh from resetting lists
+        if (!state.connected || !silent) {
+          const [clusters, namespaces, pods] = await Promise.all([
+            k8sApi.fetchClusters().catch(e => { console.error(e); return []; }),
+            k8sApi.fetchNamespaces().catch(e => { console.error(e); return []; }),
+            k8sApi.fetchPods().catch(e => { console.error(e); return []; }),
+          ]);
 
-        setState({
-          connected: true,
-          loading: false,
-          error: null,
-          clusters,
-          namespaces,
-          pods,
-        });
+          setState({
+            connected: true,
+            loading: false,
+            error: null,
+            clusters,
+            namespaces,
+            pods,
+          });
+        } else {
+          // Silent background check - just update connection status
+          setState(prev => ({
+            ...prev,
+            connected: true,
+            loading: false,
+            error: null
+          }));
+        }
       } else {
         setState(prev => ({
           ...prev,
           connected: false,
           loading: false,
           error: status.error || 'Not connected',
-          clusters: [],
-          namespaces: [],
-          pods: [],
+          // We keep the old data so the UI doesn't blank out instantly
         }));
       }
     } catch (error) {
-      setState(prev => ({
-        ...prev,
-        connected: false,
-        loading: false,
-        error: 'Failed to connect to backend',
-        clusters: [],
-        namespaces: [],
-        pods: [],
-      }));
+      if (!silent) {
+        setState(prev => ({
+          ...prev,
+          connected: false,
+          loading: false,
+          error: 'Failed to connect to backend',
+        }));
+      }
     }
-  }, []);
+  }, [state.connected]);
 
   const switchCluster = useCallback(async (clusterId: string) => {
     setState(prev => ({ ...prev, loading: true }));
     try {
       await k8sApi.switchCluster(clusterId);
-      await checkConnection();
+      // Force a full re-fetch after switching cluster
+      const [clusters, namespaces, pods] = await Promise.all([
+        k8sApi.fetchClusters().catch(e => { console.error(e); return []; }),
+        k8sApi.fetchNamespaces().catch(e => { console.error(e); return []; }),
+        k8sApi.fetchPods().catch(e => { console.error(e); return []; }),
+      ]);
+      setState({
+        connected: true,
+        loading: false,
+        error: null,
+        clusters,
+        namespaces,
+        pods,
+      });
     } catch (error) {
       console.error('Failed to switch cluster:', error);
       setState(prev => ({ ...prev, loading: false, error: 'Failed to switch cluster' }));
     }
-  }, [checkConnection]);
+  }, []);
 
   const refreshPods = useCallback(async (namespace?: string) => {
-    if (!state.connected) return;
-
+    // We don't set loading: true here to avoid UI flickering
     try {
       const pods = await k8sApi.fetchPods(namespace || undefined);
       setState(prev => ({ ...prev, pods }));
     } catch (error) {
       console.error('Failed to refresh pods:', error);
     }
-  }, [state.connected]);
+  }, []);
 
   useEffect(() => {
-    checkConnection();
+    if (isInitialMount.current) {
+      checkConnection(false);
+      isInitialMount.current = false;
+    }
 
-    // Re-check connection every 10 seconds
-    const interval = setInterval(checkConnection, 10000);
+    // Silent background check every 30 seconds (less aggressive)
+    const interval = setInterval(() => checkConnection(true), 30000);
     return () => clearInterval(interval);
   }, [checkConnection]);
 
   return {
     ...state,
-    checkConnection,
+    checkConnection: () => checkConnection(false), // Manual retry is never silent
     switchCluster,
     refreshPods,
   };
@@ -156,7 +182,7 @@ export function usePodLogs(
         setLogs(prev => {
           const existingIds = new Set(prev.map(l => l.id));
           const uniqueNew = newLogs.filter(l => !existingIds.has(l.id));
-          return [...uniqueNew, ...prev].slice(0, 500);
+          return [...prev, ...uniqueNew].slice(-500);
         });
       },
       (error) => {
