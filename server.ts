@@ -124,7 +124,7 @@ const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath));
 
 // Handle SPA routing - send all other requests to index.html
-app.get('*', (req, res) => {
+app.get('*fallback', (req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
 });
 

@@ -1,73 +1,59 @@
-# Welcome to your Lovable project
+# KubeLensy ☸️
 
-## Project info
+KubeLensy is a high-performance, beautiful, and developer-friendly Kubernetes Log Viewer. It runs locally as a lightweight binary or via Node.js, connecting directly to your `kubectl` context to provide a seamless log analysis experience without the overhead of heavy dashboards.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Features
 
-## How can I edit this code?
+- 🚀 **Zero Configuration**: Uses your existing `.kube/config`.
+- 📊 **Multi-Cluster Support**: Switch between Kubernetes contexts directly from the UI.
+- 🔍 **Powerful Filtering**: Filter by namespace, pod, container, and log levels.
+- ⚡ **Real-time Streaming**: Watch logs as they happen with auto-scroll support.
+- 🎨 **Modern Interface**: Built with React, Tailwind CSS, and shadcn/ui.
+- 📦 **No Proxy Needed**: Communicates directly with your cluster using an integrated backend.
 
-There are several ways of editing your application.
+## Quick Start
 
-**Use Lovable**
+### 1. Prerequisites
+Ensure you have `kubectl` installed and configured with your clusters.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
+### 2. Installation
+Clone the repository and install dependencies:
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server (frontend + backend).
-npm run dev:all
+git clone https://github.com/SumanReddy18/kube-lensy.git
+cd kube-lensy
+npm install
 ```
 
-**Edit a file directly in GitHub**
+### 3. Running for Development
+Starts both the frontend (Vite) and the backend server:
+```sh
+npm run dev:all
+```
+Open [http://localhost:8080](http://localhost:8080)
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### 4. Running as a Production Tool
+Build the project and start the integrated server:
+```sh
+npm run start
+```
+Open [http://localhost:3001](http://localhost:3001)
 
-**Use GitHub Codespaces**
+## Global Setup (Recommended)
+You can set up KubeLensy as a global command to launch it from any terminal.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### For Zsh (macOS/Linux)
+Add an alias to your `~/.zshrc`:
+```sh
+echo "alias kubelensy='cd $(pwd) && npm run server'" >> ~/.zshrc
+source ~/.zshrc
+```
 
-## What technologies are used for this project?
+Now you can just type `kubelensy` any time you need to debug your clusters.
 
-This project is built with:
+## Tech Stack
+- **Frontend**: Vite, React, TypeScript, Radix UI, Lucide Icons.
+- **Backend**: Express.js (Node.js) wrapper for `kubectl`.
+- **Styling**: Tailwind CSS with custom branding.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## Performance & Memory
+KubeLensy is designed for stability. It uses a sliding window (latest 500 lines) for the frontend logs to ensure your browser remains responsive even when streaming high-volume pod logs.

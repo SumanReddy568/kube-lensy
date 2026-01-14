@@ -1,4 +1,4 @@
-import { Terminal, RefreshCw, Trash2, Download, Settings } from 'lucide-react';
+import { Terminal, RefreshCw, Trash2 } from 'lucide-react';
 import { FilterState } from '@/types/logs';
 import { ConnectionStatus } from './ConnectionStatus';
 
@@ -73,18 +73,6 @@ export function Header({
             title="Clear logs"
           >
             <Trash2 className="w-5 h-5" />
-          </button>
-          <button
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors"
-            title="Export logs"
-          >
-            <Download className="w-5 h-5" />
-          </button>
-          <button
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors"
-            title="Settings"
-          >
-            <Settings className="w-5 h-5" />
           </button>
         </div>
       </div>

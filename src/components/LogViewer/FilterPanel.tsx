@@ -1,5 +1,5 @@
 import { Search, Server, Box, Layers, Container } from 'lucide-react';
-import { FilterState, LogLevel, Cluster, Namespace, Pod } from '@/types/logs';
+import { FilterState, Cluster, Namespace, Pod } from '@/types/logs';
 import { cn } from '@/lib/utils';
 import {
   Select,
@@ -19,13 +19,6 @@ interface FilterPanelProps {
   pods: Pod[];
 }
 
-const logLevelConfig: { level: LogLevel; label: string; className: string; badgeVariant: "default" | "secondary" | "destructive" | "outline" }[] = [
-  { level: 'error', label: 'Error', className: 'text-destructive', badgeVariant: 'destructive' },
-  { level: 'warn', label: 'Warn', className: 'text-warning', badgeVariant: 'secondary' },
-  { level: 'info', label: 'Info', className: 'text-info', badgeVariant: 'default' },
-  { level: 'debug', label: 'Debug', className: 'text-debug', badgeVariant: 'outline' },
-];
-
 export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pods }: FilterPanelProps) {
   const filteredNamespaces = namespaces.filter(
     ns => !filters.cluster || ns.cluster === filters.cluster
@@ -36,13 +29,6 @@ export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pod
       (!filters.cluster || pod.cluster === filters.cluster) &&
       (!filters.namespace || pod.namespace === filters.namespace)
   );
-
-  const toggleLevel = (level: LogLevel) => {
-    const newLevels = filters.levels.includes(level)
-      ? filters.levels.filter(l => l !== level)
-      : [...filters.levels, level];
-    onFilterChange({ ...filters, levels: newLevels });
-  };
 
   return (
     <div className="w-full bg-card border-b border-border p-3 flex flex-col gap-3 shadow-sm">
@@ -175,33 +161,6 @@ export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pod
                 ))}
             </SelectContent>
           </Select>
-        </div>
-      </div>
-
-      {/* Log Levels Toolbar */}
-      <div className="flex items-center gap-2 border-t border-border pt-2">
-        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mr-2">Levels:</span>
-        <div className="flex gap-1.5 overflow-x-auto pb-1">
-          {logLevelConfig.map(({ level, label, badgeVariant }) => (
-            <button
-              key={level}
-              onClick={() => toggleLevel(level)}
-              className={cn(
-                "transition-all",
-                !filters.levels.includes(level) && "opacity-40 grayscale"
-              )}
-            >
-              <Badge
-                variant={badgeVariant}
-                className={cn(
-                  "cursor-pointer hover:scale-105 transition-transform px-3 py-1 text-[10px]",
-                  !filters.levels.includes(level) && "bg-muted text-muted-foreground border-transparent"
-                )}
-              >
-                {label}
-              </Badge>
-            </button>
-          ))}
         </div>
       </div>
     </div>
