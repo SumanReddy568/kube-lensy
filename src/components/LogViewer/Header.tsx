@@ -1,15 +1,28 @@
 import { Terminal, RefreshCw, Trash2, Download, Settings } from 'lucide-react';
 import { FilterState } from '@/types/logs';
-import { cn } from '@/lib/utils';
+import { ConnectionStatus } from './ConnectionStatus';
 
 interface HeaderProps {
   filters: FilterState;
   onRefresh: () => void;
   onClear: () => void;
   isLive: boolean;
+  connected: boolean;
+  loading: boolean;
+  error: string | null;
+  onRetryConnection: () => void;
 }
 
-export function Header({ filters, onRefresh, onClear, isLive }: HeaderProps) {
+export function Header({ 
+  filters, 
+  onRefresh, 
+  onClear, 
+  isLive, 
+  connected, 
+  loading, 
+  error, 
+  onRetryConnection 
+}: HeaderProps) {
   const activeFilters = [
     filters.cluster,
     filters.namespace,
@@ -31,11 +44,19 @@ export function Header({ filters, onRefresh, onClear, isLive }: HeaderProps) {
             </div>
           </div>
 
+          {/* Connection Status */}
+          <ConnectionStatus 
+            connected={connected}
+            loading={loading}
+            error={error}
+            onRetry={onRetryConnection}
+          />
+
           {/* Live indicator */}
-          {isLive && (
+          {isLive && connected && (
             <div className="flex items-center gap-2 px-3 py-1.5 bg-success/20 rounded-full">
               <span className="w-2 h-2 bg-success rounded-full animate-pulse" />
-              <span className="text-xs font-medium text-success">Live</span>
+              <span className="text-xs font-medium text-success">Streaming</span>
             </div>
           )}
         </div>

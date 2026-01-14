@@ -1,9 +1,10 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { FilterPanel } from './FilterPanel';
 import { LogList } from './LogList';
 import { Header } from './Header';
-import { FilterState, LogEntry, LogLevel } from '@/types/logs';
-import { mockClusters, mockNamespaces, mockPods, generateMockLogs } from '@/data/mockData';
+import { ConnectionBanner } from './ConnectionStatus';
+import { FilterState } from '@/types/logs';
+import { useKubernetes, usePodLogs } from '@/hooks/useKubernetes';
 import { Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -18,21 +19,37 @@ const initialFilters: FilterState = {
 
 export function LogViewer() {
   const [filters, setFilters] = useState<FilterState>(initialFilters);
-  const [logs, setLogs] = useState<LogEntry[]>(() => generateMockLogs(100));
   const [isLive, setIsLive] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // Simulate live log streaming
-  useEffect(() => {
-    if (!isLive) return;
+  // Real Kubernetes connection
+  const { 
+    connected, 
+    loading: k8sLoading, 
+    error: k8sError, 
+    clusters, 
+    namespaces, 
+    pods, 
+    checkConnection,
+    refreshPods 
+  } = useKubernetes();
 
-    const interval = setInterval(() => {
-      const newLogs = generateMockLogs(Math.floor(Math.random() * 3) + 1);
-      setLogs(prev => [...newLogs, ...prev].slice(0, 500));
-    }, 2000);
+  // Real pod logs with fallback to mock
+  const { logs, loading: logsLoading, refresh, clear } = usePodLogs(
+    connected,
+    filters.namespace,
+    filters.pod,
+    filters.container,
+    isLive
+  );
 
-    return () => clearInterval(interval);
-  }, [isLive]);
+  // Refresh pods when namespace changes
+  const handleFilterChange = (newFilters: FilterState) => {
+    setFilters(newFilters);
+    if (newFilters.namespace !== filters.namespace) {
+      refreshPods(newFilters.namespace || undefined);
+    }
+  };
 
   const filteredLogs = useMemo(() => {
     return logs.filter(log => {
@@ -46,22 +63,23 @@ export function LogViewer() {
     });
   }, [logs, filters]);
 
-  const handleRefresh = useCallback(() => {
-    setLogs(generateMockLogs(100));
-  }, []);
-
-  const handleClear = useCallback(() => {
-    setLogs([]);
-  }, []);
-
   return (
     <div className="h-screen flex flex-col bg-background">
       <Header 
         filters={filters} 
-        onRefresh={handleRefresh} 
-        onClear={handleClear}
+        onRefresh={refresh} 
+        onClear={clear}
         isLive={isLive}
+        connected={connected}
+        loading={k8sLoading}
+        error={k8sError}
+        onRetryConnection={checkConnection}
       />
+      
+      {/* Connection Banner */}
+      {!connected && !k8sLoading && (
+        <ConnectionBanner onRetry={checkConnection} />
+      )}
       
       <div className="flex-1 flex overflow-hidden relative">
         {/* Mobile Sidebar Toggle */}
@@ -80,10 +98,10 @@ export function LogViewer() {
         )}>
           <FilterPanel
             filters={filters}
-            onFilterChange={setFilters}
-            clusters={mockClusters}
-            namespaces={mockNamespaces}
-            pods={mockPods}
+            onFilterChange={handleFilterChange}
+            clusters={clusters}
+            namespaces={namespaces}
+            pods={pods}
           />
         </aside>
 
