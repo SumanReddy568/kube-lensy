@@ -2,6 +2,11 @@ import express from 'express';
 import cors from 'cors';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const execAsync = promisify(exec);
 const MAX_BUFFER = 1024 * 1024 * 50; // 50MB buffer for large K8s outputs
@@ -112,6 +117,15 @@ app.get('/api/logs', async (req, res) => {
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
+});
+
+// Serve static files from the Vite build
+const distPath = path.join(__dirname, 'dist');
+app.use(express.static(distPath));
+
+// Handle SPA routing - send all other requests to index.html
+app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
 });
 
 app.listen(port, () => {
