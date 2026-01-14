@@ -24,21 +24,22 @@ export function useKubernetes() {
 
   const checkConnection = useCallback(async () => {
     setState(prev => ({ ...prev, loading: true }));
-    
+
     const status = await k8sApi.checkConnection();
-    
+
     if (status.connected) {
       try {
-        const [namespaces, pods] = await Promise.all([
+        const [clusters, namespaces, pods] = await Promise.all([
+          k8sApi.fetchClusters(),
           k8sApi.fetchNamespaces(),
           k8sApi.fetchPods(),
         ]);
-        
+
         setState({
           connected: true,
           loading: false,
           error: null,
-          clusters: [{ id: 'local', name: 'local-cluster', status: 'connected' }],
+          clusters,
           namespaces,
           pods,
         });
@@ -63,9 +64,20 @@ export function useKubernetes() {
     }
   }, []);
 
+  const switchCluster = useCallback(async (clusterId: string) => {
+    setState(prev => ({ ...prev, loading: true }));
+    try {
+      await k8sApi.switchCluster(clusterId);
+      await checkConnection();
+    } catch (error) {
+      console.error('Failed to switch cluster:', error);
+      setState(prev => ({ ...prev, loading: false, error: 'Failed to switch cluster' }));
+    }
+  }, [checkConnection]);
+
   const refreshPods = useCallback(async (namespace?: string) => {
     if (!state.connected) return;
-    
+
     try {
       const pods = await k8sApi.fetchPods(namespace || undefined);
       setState(prev => ({ ...prev, pods }));
@@ -76,7 +88,7 @@ export function useKubernetes() {
 
   useEffect(() => {
     checkConnection();
-    
+
     // Re-check connection every 10 seconds
     const interval = setInterval(checkConnection, 10000);
     return () => clearInterval(interval);
@@ -85,6 +97,7 @@ export function useKubernetes() {
   return {
     ...state,
     checkConnection,
+    switchCluster,
     refreshPods,
   };
 }

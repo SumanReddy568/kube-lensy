@@ -32,8 +32,8 @@ cd <YOUR_PROJECT_NAME>
 # Step 3: Install the necessary dependencies.
 npm i
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+# Step 4: Start the development server (frontend + backend).
+npm run dev:all
 ```
 
 **Edit a file directly in GitHub**

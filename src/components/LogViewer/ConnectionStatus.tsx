@@ -12,8 +12,8 @@ export function ConnectionStatus({ connected, loading, error, onRetry }: Connect
   return (
     <div className={cn(
       "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-mono",
-      connected 
-        ? "bg-log-info/10 text-log-info border border-log-info/20" 
+      connected
+        ? "bg-log-info/10 text-log-info border border-log-info/20"
         : "bg-log-error/10 text-log-error border border-log-error/20"
     )}>
       {loading ? (
@@ -49,9 +49,9 @@ export function ConnectionBanner({ onRetry }: { onRetry: () => void }) {
         <div className="flex items-center gap-2">
           <WifiOff className="w-4 h-4" />
           <span>
-            <strong>Not connected to Kubernetes.</strong> Run{' '}
+            <strong>Not connected to backend.</strong> Run{' '}
             <code className="bg-card px-1.5 py-0.5 rounded">
-              kubectl proxy --port=8001
+              npm run server
             </code>{' '}
             to see real logs.
           </span>

@@ -9,7 +9,7 @@ import { Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const initialFilters: FilterState = {
-  cluster: 'local',
+  cluster: null,
   namespace: null,
   pod: null,
   container: null,
@@ -23,15 +23,16 @@ export function LogViewer() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Real Kubernetes connection
-  const { 
-    connected, 
-    loading: k8sLoading, 
-    error: k8sError, 
-    clusters, 
-    namespaces, 
-    pods, 
+  const {
+    connected,
+    loading: k8sLoading,
+    error: k8sError,
+    clusters,
+    namespaces,
+    pods,
     checkConnection,
-    refreshPods 
+    switchCluster,
+    refreshPods
   } = useKubernetes();
 
   // Real pod logs with fallback to mock
@@ -44,7 +45,10 @@ export function LogViewer() {
   );
 
   // Refresh pods when namespace changes
-  const handleFilterChange = (newFilters: FilterState) => {
+  const handleFilterChange = async (newFilters: FilterState) => {
+    if (newFilters.cluster !== filters.cluster && newFilters.cluster) {
+      await switchCluster(newFilters.cluster);
+    }
     setFilters(newFilters);
     if (newFilters.namespace !== filters.namespace) {
       refreshPods(newFilters.namespace || undefined);
@@ -65,9 +69,9 @@ export function LogViewer() {
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      <Header 
-        filters={filters} 
-        onRefresh={refresh} 
+      <Header
+        filters={filters}
+        onRefresh={refresh}
         onClear={clear}
         isLive={isLive}
         connected={connected}
@@ -75,12 +79,12 @@ export function LogViewer() {
         error={k8sError}
         onRetryConnection={checkConnection}
       />
-      
+
       {/* Connection Banner */}
       {!connected && !k8sLoading && (
         <ConnectionBanner onRetry={checkConnection} />
       )}
-      
+
       <div className="flex-1 flex overflow-hidden relative">
         {/* Mobile Sidebar Toggle */}
         <button
@@ -107,7 +111,7 @@ export function LogViewer() {
 
         {/* Overlay for mobile */}
         {sidebarOpen && (
-          <div 
+          <div
             className="lg:hidden fixed inset-0 bg-background/80 backdrop-blur-sm z-30"
             onClick={() => setSidebarOpen(false)}
           />
