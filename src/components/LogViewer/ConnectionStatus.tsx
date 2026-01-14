@@ -29,7 +29,7 @@ export function ConnectionStatus({ connected, loading, error, onRetry }: Connect
       ) : (
         <>
           <WifiOff className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Mock Data</span>
+          <span className="hidden sm:inline">Disconnected</span>
           <button
             onClick={onRetry}
             className="ml-1 underline hover:no-underline"

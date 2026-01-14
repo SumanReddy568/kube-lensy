@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Cluster, Namespace, Pod, LogEntry } from '@/types/logs';
-import { mockClusters, mockNamespaces, mockPods, generateMockLogs } from '@/data/mockData';
 import * as k8sApi from '@/services/kubernetesApi';
 
 export interface K8sState {
@@ -17,18 +16,18 @@ export function useKubernetes() {
     connected: false,
     loading: true,
     error: null,
-    clusters: mockClusters,
-    namespaces: mockNamespaces,
-    pods: mockPods,
+    clusters: [],
+    namespaces: [],
+    pods: [],
   });
 
   const checkConnection = useCallback(async () => {
     setState(prev => ({ ...prev, loading: true }));
 
-    const status = await k8sApi.checkConnection();
+    try {
+      const status = await k8sApi.checkConnection();
 
-    if (status.connected) {
-      try {
+      if (status.connected) {
         const [clusters, namespaces, pods] = await Promise.all([
           k8sApi.fetchClusters(),
           k8sApi.fetchNamespaces(),
@@ -43,23 +42,26 @@ export function useKubernetes() {
           namespaces,
           pods,
         });
-      } catch (error) {
+      } else {
         setState(prev => ({
           ...prev,
           connected: false,
           loading: false,
-          error: 'Failed to fetch cluster data',
+          error: status.error || 'Not connected',
+          clusters: [],
+          namespaces: [],
+          pods: [],
         }));
       }
-    } else {
+    } catch (error) {
       setState(prev => ({
         ...prev,
         connected: false,
         loading: false,
-        error: status.error || 'Not connected',
-        clusters: mockClusters,
-        namespaces: mockNamespaces,
-        pods: mockPods,
+        error: 'Failed to connect to backend',
+        clusters: [],
+        namespaces: [],
+        pods: [],
       }));
     }
   }, []);
@@ -114,15 +116,8 @@ export function usePodLogs(
 
   // Initial fetch
   useEffect(() => {
-    if (!namespace || !pod) {
-      if (!connected) {
-        setLogs(generateMockLogs(100));
-      }
-      return;
-    }
-
-    if (!connected) {
-      setLogs(generateMockLogs(100));
+    if (!connected || !namespace || !pod) {
+      setLogs([]);
       return;
     }
 
@@ -138,7 +133,7 @@ export function usePodLogs(
         setLogs(fetchedLogs);
       } catch (error) {
         console.error('Failed to fetch logs:', error);
-        setLogs(generateMockLogs(100));
+        setLogs([]);
       } finally {
         setLoading(false);
       }
@@ -150,14 +145,6 @@ export function usePodLogs(
   // Live streaming
   useEffect(() => {
     if (!isLive || !connected || !namespace || !pod) {
-      // Use mock streaming if not connected
-      if (!connected && isLive) {
-        const interval = setInterval(() => {
-          const newLogs = generateMockLogs(Math.floor(Math.random() * 3) + 1);
-          setLogs(prev => [...newLogs, ...prev].slice(0, 500));
-        }, 2000);
-        return () => clearInterval(interval);
-      }
       return;
     }
 
@@ -182,7 +169,6 @@ export function usePodLogs(
 
   const refresh = useCallback(async () => {
     if (!connected || !namespace || !pod) {
-      setLogs(generateMockLogs(100));
       return;
     }
 
@@ -195,7 +181,7 @@ export function usePodLogs(
       );
       setLogs(fetchedLogs);
     } catch (error) {
-      setLogs(generateMockLogs(100));
+      console.error('Failed to refresh logs:', error);
     }
   }, [connected, namespace, pod, container]);
 

@@ -35,7 +35,7 @@ export function LogViewer() {
     refreshPods
   } = useKubernetes();
 
-  // Real pod logs with fallback to mock
+  // Real pod logs
   const { logs, loading: logsLoading, refresh, clear } = usePodLogs(
     connected,
     filters.namespace,
