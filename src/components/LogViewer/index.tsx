@@ -33,8 +33,9 @@ export function LogViewer() {
   } = useKubernetes();
 
   // Real pod logs
-  const { logs, loading: logsLoading, refresh, clear } = usePodLogs(
+  const { logs, loading: logsLoading, refresh, clear, lastUpdate } = usePodLogs(
     connected,
+    filters.cluster,
     filters.namespace,
     filters.pod,
     filters.container,
@@ -81,6 +82,7 @@ export function LogViewer() {
         loading={k8sLoading}
         error={k8sError}
         onRetryConnection={checkConnection}
+        lastUpdate={lastUpdate}
       />
 
       {/* Connection Banner */}

@@ -13,36 +13,40 @@ export function LogList({ logs, searchTerm }: LogListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [hasNewLogs, setHasNewLogs] = useState(false);
+  const prevLogsCount = useRef(logs.length);
 
   // Scroll to bottom whenever logs change, if autoScroll is on
   useEffect(() => {
-    if (autoScroll && containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    if (logs.length > prevLogsCount.current) {
+      if (autoScroll && containerRef.current) {
+        containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      } else if (!isAtBottom) {
+        setHasNewLogs(true);
+      }
     }
-  }, [logs, autoScroll]);
+    prevLogsCount.current = logs.length;
+  }, [logs, autoScroll, isAtBottom]);
 
   const handleScroll = () => {
     if (containerRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-      // Check if we're near the bottom (within 20px)
-      const nearBottom = scrollHeight - scrollTop - clientHeight < 20;
+      // Check if we're near the bottom (within 50px)
+      const nearBottom = scrollHeight - scrollTop - clientHeight < 50;
       setIsAtBottom(nearBottom);
 
-      // If the user scrolls up, disable auto-scroll
-      if (!nearBottom && autoScroll) {
-        // We only disable if it was a manual scroll up
-        // (Optional: you can keep it simple and just let users toggle it)
+      if (nearBottom) {
+        setHasNewLogs(false);
       }
     }
   };
 
   const scrollToBottom = () => {
     if (containerRef.current) {
-      containerRef.current.scrollTo({
-        top: containerRef.current.scrollHeight,
-        behavior: 'smooth'
-      });
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
       setAutoScroll(true);
+      setIsAtBottom(true);
+      setHasNewLogs(false);
     }
   };
 
@@ -106,12 +110,31 @@ export function LogList({ logs, searchTerm }: LogListProps) {
       </div>
 
       {/* Scroll to Bottom Button */}
-      {!isAtBottom && (
+      {(!isAtBottom || hasNewLogs) && (
         <button
           onClick={scrollToBottom}
-          className="absolute bottom-6 right-6 p-3 bg-primary text-primary-foreground rounded-full shadow-lg hover:bg-primary/90 transition-all animate-fade-in glow-primary z-50"
+          className={cn(
+            "absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full shadow-lg transition-all z-50 flex items-center gap-2 font-medium text-sm animate-in fade-in slide-in-from-bottom-4 duration-300",
+            hasNewLogs
+              ? "bg-primary text-primary-foreground scale-110 glow-primary"
+              : "bg-secondary text-muted-foreground hover:text-foreground opacity-80"
+          )}
         >
-          <ArrowDown className="w-5 h-5" />
+          {hasNewLogs ? (
+            <>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-foreground opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary-foreground"></span>
+              </span>
+              New logs below
+              <ArrowDown className="w-4 h-4" />
+            </>
+          ) : (
+            <>
+              Jump to latest
+              <ArrowDown className="w-4 h-4" />
+            </>
+          )}
         </button>
       )}
     </div>

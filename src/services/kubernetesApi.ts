@@ -153,58 +153,87 @@ function detectLogLevel(message: string): LogLevel {
   return 'info';
 }
 
-// Stream logs using polling
 export function streamPodLogs(
   namespace: string,
   podName: string,
   container: string | undefined,
+  clusterName: string,
   onLog: (logs: LogEntry[]) => void,
   onError: (error: Error) => void
 ): () => void {
-  let isActive = true;
-  let lastTimestamp = '';
+  let url = `${API_BASE_URL}/logs/stream?namespace=${namespace}&pod=${podName}&tailLines=10`;
+  if (container) {
+    url += `&container=${container}`;
+  }
 
-  const poll = async () => {
-    if (!isActive) return;
+  const eventSource = new EventSource(url);
+  let logBuffer: LogEntry[] = [];
+  let flushTimeout: NodeJS.Timeout | null = null;
 
-    try {
-      let url = `${API_BASE_URL}/logs?namespace=${namespace}&pod=${podName}&tailLines=50`;
-      if (container) {
-        url += `&container=${container}`;
-      }
-
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const text = await response.text();
-      // Fetch current context to use in logs
-      const clusters = await fetchClusters();
-      const currentCluster = clusters.find(c => c.status === 'connected')?.name || 'local';
-      const logs = parseLogText(text, namespace, podName, container || 'main', currentCluster);
-
-      if (logs.length > 0) {
-        // Filter out logs earlier than lastTimestamp
-        const newLogs = lastTimestamp
-          ? logs.filter(l => l.timestamp.toISOString() > lastTimestamp)
-          : logs;
-
-        if (newLogs.length > 0) {
-          lastTimestamp = logs[logs.length - 1].timestamp.toISOString();
-          onLog(newLogs);
-        }
-      }
-    } catch (error) {
-      onError(error as Error);
+  const flush = () => {
+    if (logBuffer.length > 0) {
+      onLog([...logBuffer]);
+      logBuffer = [];
     }
+    flushTimeout = null;
+  };
 
-    if (isActive) {
-      setTimeout(poll, 2000);
+  eventSource.onmessage = (event) => {
+    const line = event.data;
+    if (!line) return;
+
+    const log = parseSingleLogLine(line, 0, namespace, podName, container || 'main', clusterName);
+    logBuffer.push(log);
+
+    // Batch updates to avoid too many re-renders
+    if (!flushTimeout) {
+      flushTimeout = setTimeout(flush, 100);
     }
   };
 
-  poll();
+  eventSource.onerror = (error) => {
+    console.error('EventSource error:', error);
+    onError(new Error('Log stream connection lost'));
+    eventSource.close();
+  };
 
   return () => {
-    isActive = false;
+    if (flushTimeout) clearTimeout(flushTimeout);
+    eventSource.close();
+  };
+}
+
+function parseSingleLogLine(
+  line: string,
+  index: number,
+  namespace: string,
+  pod: string,
+  container: string,
+  cluster: string
+): LogEntry {
+  const timestampMatch = line.match(/^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+(.*)$/);
+
+  let timestamp: Date;
+  let message: string;
+
+  if (timestampMatch) {
+    timestamp = new Date(timestampMatch[1]);
+    message = timestampMatch[2];
+  } else {
+    timestamp = new Date();
+    message = line;
+  }
+
+  const level = detectLogLevel(message);
+
+  return {
+    id: `${pod}-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+    timestamp,
+    level,
+    message,
+    container,
+    namespace,
+    pod,
+    cluster,
   };
 }

@@ -132,6 +132,7 @@ export function useKubernetes() {
 
 export function usePodLogs(
   connected: boolean,
+  cluster: string | null,
   namespace: string | null,
   pod: string | null,
   container: string | null,
@@ -139,11 +140,13 @@ export function usePodLogs(
 ) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<number>(0);
 
   // Initial fetch
   useEffect(() => {
     if (!connected || !namespace || !pod) {
       setLogs([]);
+      setLastUpdate(0);
       return;
     }
 
@@ -157,6 +160,7 @@ export function usePodLogs(
           200
         );
         setLogs(fetchedLogs);
+        setLastUpdate(Date.now());
       } catch (error) {
         console.error('Failed to fetch logs:', error);
         setLogs([]);
@@ -178,12 +182,14 @@ export function usePodLogs(
       namespace,
       pod,
       container || undefined,
+      cluster || 'local',
       (newLogs) => {
         setLogs(prev => {
           const existingIds = new Set(prev.map(l => l.id));
           const uniqueNew = newLogs.filter(l => !existingIds.has(l.id));
-          return [...prev, ...uniqueNew].slice(-500);
+          return [...prev, ...uniqueNew].slice(-1000);
         });
+        setLastUpdate(Date.now());
       },
       (error) => {
         console.error('Stream error:', error);
@@ -191,7 +197,7 @@ export function usePodLogs(
     );
 
     return stopStream;
-  }, [isLive, connected, namespace, pod, container]);
+  }, [isLive, connected, namespace, pod, container, cluster]);
 
   const refresh = useCallback(async () => {
     if (!connected || !namespace || !pod) {
@@ -206,6 +212,7 @@ export function usePodLogs(
         200
       );
       setLogs(fetchedLogs);
+      setLastUpdate(Date.now());
     } catch (error) {
       console.error('Failed to refresh logs:', error);
     }
@@ -213,7 +220,8 @@ export function usePodLogs(
 
   const clear = useCallback(() => {
     setLogs([]);
+    setLastUpdate(0);
   }, []);
 
-  return { logs, loading, refresh, clear };
+  return { logs, loading, refresh, clear, lastUpdate };
 }

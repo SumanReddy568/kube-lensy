@@ -1,6 +1,8 @@
+import { useState, useEffect } from 'react';
 import { Terminal, RefreshCw, Trash2 } from 'lucide-react';
 import { FilterState } from '@/types/logs';
 import { ConnectionStatus } from './ConnectionStatus';
+import { cn } from '@/lib/utils';
 
 interface HeaderProps {
   filters: FilterState;
@@ -11,6 +13,7 @@ interface HeaderProps {
   loading: boolean;
   error: string | null;
   onRetryConnection: () => void;
+  lastUpdate?: number;
 }
 
 export function Header({
@@ -21,8 +24,18 @@ export function Header({
   connected,
   loading,
   error,
-  onRetryConnection
+  onRetryConnection,
+  lastUpdate
 }: HeaderProps) {
+  const [pulseLive, setPulseLive] = useState(false);
+
+  useEffect(() => {
+    if (lastUpdate && lastUpdate > 0) {
+      setPulseLive(true);
+      const timer = setTimeout(() => setPulseLive(false), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [lastUpdate]);
   const activeFilters = [
     filters.cluster,
     filters.namespace,
@@ -48,11 +61,18 @@ export function Header({
             loading={loading}
             error={error}
             onRetry={onRetryConnection}
+            lastUpdate={lastUpdate}
           />
 
           {isLive && connected && (
-            <div className="flex items-center gap-2 px-3 py-1 bg-success/15 rounded-full border border-success/30">
-              <span className="w-1.5 h-1.5 bg-success rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
+            <div className={cn(
+              "flex items-center gap-2 px-3 py-1 bg-success/15 rounded-full border border-success/30 transition-all duration-300",
+              pulseLive && "scale-105 bg-success/30 border-success/50"
+            )}>
+              <span className={cn(
+                "w-1.5 h-1.5 bg-success rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)]",
+                pulseLive ? "animate-ping" : "animate-pulse"
+              )} />
               <span className="text-[10px] uppercase tracking-wider font-bold text-success">Live Source</span>
             </div>
           )}

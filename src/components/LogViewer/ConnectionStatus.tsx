@@ -1,3 +1,4 @@
+import { useRef, useEffect, useState } from 'react';
 import { Wifi, WifiOff, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -6,14 +7,29 @@ interface ConnectionStatusProps {
   loading: boolean;
   error: string | null;
   onRetry: () => void;
+  lastUpdate?: number;
 }
 
-export function ConnectionStatus({ connected, loading, error, onRetry }: ConnectionStatusProps) {
+export function ConnectionStatus({ connected, loading, error, onRetry, lastUpdate }: ConnectionStatusProps) {
+  const [isPulsing, setIsPulsing] = useState(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (lastUpdate && lastUpdate > 0) {
+      setIsPulsing(true);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setIsPulsing(false), 500);
+    }
+  }, [lastUpdate]);
+
   return (
     <div className={cn(
-      "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-mono",
+      "flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-mono transition-all duration-300",
       connected
-        ? "bg-log-info/10 text-log-info border border-log-info/20"
+        ? cn(
+          "bg-log-info/10 text-log-info border border-log-info/20",
+          isPulsing && "bg-log-info/30 border-log-info/50 scale-105 shadow-[0_0_10px_rgba(var(--log-info),0.3)]"
+        )
         : "bg-log-error/10 text-log-error border border-log-error/20"
     )}>
       {loading ? (
@@ -23,8 +39,13 @@ export function ConnectionStatus({ connected, loading, error, onRetry }: Connect
         </>
       ) : connected ? (
         <>
-          <Wifi className="w-3.5 h-3.5" />
-          <span>Live</span>
+          <div className="relative">
+            <Wifi className="w-3.5 h-3.5" />
+            {isPulsing && (
+              <span className="absolute inset-0 rounded-full bg-log-info/40 animate-ping" />
+            )}
+          </div>
+          <span className={cn(isPulsing && "font-bold")}>Live</span>
         </>
       ) : (
         <>
