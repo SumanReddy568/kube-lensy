@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Terminal, RefreshCw, Trash2 } from 'lucide-react';
+import { Terminal, RefreshCw, Trash2, Info } from 'lucide-react';
 import { FilterState } from '@/types/logs';
 import { ConnectionStatus } from './ConnectionStatus';
 import { cn } from '@/lib/utils';
@@ -8,6 +8,7 @@ interface HeaderProps {
   filters: FilterState;
   onRefresh: () => void;
   onClear: () => void;
+  onShowDetails?: () => void;
   isLive: boolean;
   connected: boolean;
   loading: boolean;
@@ -20,6 +21,7 @@ export function Header({
   filters,
   onRefresh,
   onClear,
+  onShowDetails,
   isLive,
   connected,
   loading,
@@ -80,6 +82,16 @@ export function Header({
 
         {/* Actions */}
         <div className="flex items-center gap-2">
+          {filters.pod && (
+            <button
+              onClick={onShowDetails}
+              className="px-3 py-1.5 flex items-center gap-2 bg-secondary text-foreground hover:bg-secondary/80 rounded-lg transition-colors text-sm font-medium mr-2"
+              title="Show pod details"
+            >
+              <Info className="w-4 h-4" />
+              Pod Details
+            </button>
+          )}
           <button
             onClick={onRefresh}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors"

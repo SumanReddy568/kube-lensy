@@ -5,6 +5,7 @@ import { Header } from './Header';
 import { ConnectionBanner } from './ConnectionStatus';
 import { FilterState } from '@/types/logs';
 import { useKubernetes, usePodLogs } from '@/hooks/useKubernetes';
+import { PodDetailsSidebar } from './PodDetailsSidebar';
 
 const initialFilters: FilterState = {
   cluster: null,
@@ -18,6 +19,7 @@ const initialFilters: FilterState = {
 export function LogViewer() {
   const [filters, setFilters] = useState<FilterState>(initialFilters);
   const [isLive, setIsLive] = useState(true);
+  const [showPodDetails, setShowPodDetails] = useState(false);
 
   // Real Kubernetes connection
   const {
@@ -51,6 +53,10 @@ export function LogViewer() {
     if (newFilters.namespace !== filters.namespace) {
       refreshPods(newFilters.namespace || undefined);
     }
+    // Close details if pod changes
+    if (newFilters.pod !== filters.pod) {
+      setShowPodDetails(false);
+    }
   };
 
   const filteredLogs = useMemo(() => {
@@ -72,11 +78,12 @@ export function LogViewer() {
   }, [logs, filters, clusters]);
 
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden">
+    <div className="h-screen flex flex-col bg-background overflow-hidden font-sans">
       <Header
         filters={filters}
         onRefresh={refresh}
         onClear={clear}
+        onShowDetails={() => setShowPodDetails(!showPodDetails)}
         isLive={isLive}
         connected={connected}
         loading={k8sLoading}
@@ -100,8 +107,18 @@ export function LogViewer() {
       />
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden relative">
-        <LogList logs={filteredLogs} searchTerm={filters.search} />
+      <main className="flex-1 flex overflow-hidden relative">
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <LogList logs={filteredLogs} searchTerm={filters.search} />
+        </div>
+
+        {showPodDetails && filters.pod && filters.namespace && (
+          <PodDetailsSidebar
+            podName={filters.pod}
+            namespace={filters.namespace}
+            onClose={() => setShowPodDetails(false)}
+          />
+        )}
       </main>
     </div>
   );

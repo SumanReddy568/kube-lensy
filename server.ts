@@ -109,6 +109,39 @@ app.get('/api/pods', async (req, res) => {
     }
 });
 
+app.get('/api/pods/:pod/describe', async (req, res) => {
+    const { pod } = req.params;
+    const { namespace } = req.query;
+    if (!namespace) return res.status(400).json({ error: 'Namespace is required' });
+
+    try {
+        const { stdout } = await execAsync(`kubectl describe pod ${pod} -n ${namespace}`, { maxBuffer: MAX_BUFFER });
+        res.send(stdout);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/pods/:pod/events', async (req, res) => {
+    const { pod } = req.params;
+    const { namespace } = req.query;
+    if (!namespace) return res.status(400).json({ error: 'Namespace is required' });
+
+    try {
+        const { stdout } = await execAsync(`kubectl get events -n ${namespace} --field-selector involvedObject.name=${pod} -o json`, { maxBuffer: MAX_BUFFER });
+        const data = JSON.parse(stdout);
+        res.json(data.items.map((event: any) => ({
+            type: event.type,
+            reason: event.reason,
+            message: event.message,
+            lastTimestamp: event.lastTimestamp || event.eventTime || event.firstTimestamp,
+            count: event.count
+        })));
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.get('/api/logs', async (req, res) => {
     const { namespace, pod, container, tailLines = 100 } = req.query;
     if (!namespace || !pod) {

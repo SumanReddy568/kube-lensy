@@ -237,3 +237,33 @@ function parseSingleLogLine(
     cluster,
   };
 }
+
+export async function fetchPodDescribe(namespace: string, pod: string): Promise<string> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/pods/${pod}/describe?namespace=${namespace}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.text();
+  } catch (error) {
+    console.error('Failed to fetch pod description:', error);
+    throw error;
+  }
+}
+
+export interface PodEvent {
+  type: string;
+  reason: string;
+  message: string;
+  lastTimestamp: string;
+  count: number;
+}
+
+export async function fetchPodEvents(namespace: string, pod: string): Promise<PodEvent[]> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/pods/${pod}/events?namespace=${namespace}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch pod events:', error);
+    throw error;
+  }
+}
