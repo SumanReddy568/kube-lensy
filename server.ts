@@ -1,10 +1,27 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+
+// Kubernetes types
+interface KubernetesNamespace {
+    metadata: {
+        name: string;
+    };
+}
+
+interface KubernetesEvent {
+    type: string;
+    reason: string;
+    message: string;
+    lastTimestamp?: string;
+    eventTime?: string;
+    firstTimestamp?: string;
+    count: number;
+}
 
 // Fix for __dirname and __filename in both ESM and CJS
 const getDirname = () => {
@@ -22,22 +39,69 @@ const MAX_BUFFER = 1024 * 1024 * 50; // 50MB buffer for large K8s outputs
 const app = express();
 const port = 3001;
 
+// Simple in-memory cache with TTL
+class Cache<T> {
+    private store = new Map<string, { data: T; expires: number }>();
+
+    get(key: string): T | undefined {
+        const item = this.store.get(key);
+        if (item && item.expires > Date.now()) {
+            return item.data;
+        }
+        this.store.delete(key);
+        return undefined;
+    }
+
+    set(key: string, data: T, ttlMs: number): void {
+        this.store.set(key, { data, expires: Date.now() + ttlMs });
+    }
+
+    clear(): void {
+        this.store.clear();
+    }
+}
+
+const apiCache = new Cache<unknown>();
+
+const cacheMiddleware = (ttlMs: number) => (req: Request, res: Response, next: NextFunction) => {
+    const key = req.originalUrl;
+    const cachedData = apiCache.get(key);
+    if (cachedData) {
+        return res.json(cachedData);
+    }
+
+    const originalJson = res.json.bind(res);
+    res.json = (body) => {
+        apiCache.set(key, body, ttlMs);
+        return originalJson(body);
+    };
+
+    next();
+};
+
+
 app.use(cors());
 app.use(express.json());
 
-app.get('/api/clusters', async (req, res) => {
+app.get('/api/clusters', cacheMiddleware(60000), async (req, res) => {
     try {
-        const { stdout } = await execAsync('kubectl config get-contexts -o name', { maxBuffer: MAX_BUFFER });
-        const contexts = stdout.split('\n').filter(Boolean);
-        const { stdout: currentContext } = await execAsync('kubectl config current-context', { maxBuffer: MAX_BUFFER });
+        const [
+            { stdout: contextsOutput },
+            { stdout: currentContext }
+        ] = await Promise.all([
+            execAsync('kubectl config get-contexts -o name', { maxBuffer: MAX_BUFFER }),
+            execAsync('kubectl config current-context', { maxBuffer: MAX_BUFFER })
+        ]);
+
+        const contexts = contextsOutput.split('\n').filter(Boolean);
 
         res.json(contexts.map(name => ({
             id: name,
             name: name,
             status: name === currentContext.trim() ? 'connected' : 'disconnected'
         })));
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        res.status(500).json({ error: error instanceof Error ? error.message : 'An unknown error occurred' });
     }
 });
 
@@ -45,13 +109,14 @@ app.post('/api/clusters/switch', async (req, res) => {
     const { id } = req.body;
     try {
         await execAsync(`kubectl config use-context ${id}`, { maxBuffer: MAX_BUFFER });
+        apiCache.clear(); // Invalidate cache on cluster switch
         res.json({ success: true });
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        res.status(500).json({ error: error instanceof Error ? error.message : 'An unknown error occurred' });
     }
 });
 
-app.get('/api/namespaces', async (req, res) => {
+app.get('/api/namespaces', cacheMiddleware(10000), async (req, res) => {
     try {
         const { stdout: currentContext } = await execAsync('kubectl config current-context', { maxBuffer: MAX_BUFFER });
         const clusterName = currentContext.trim();
@@ -59,13 +124,13 @@ app.get('/api/namespaces', async (req, res) => {
         try {
             const { stdout } = await execAsync('kubectl get namespaces -o json', { maxBuffer: MAX_BUFFER });
             const data = JSON.parse(stdout);
-            res.json(data.items.map((ns: any) => ({
+            res.json(data.items.map((ns: KubernetesNamespace) => ({
                 name: ns.metadata.name,
                 cluster: clusterName,
             })));
-        } catch (error: any) {
+        } catch (error: unknown) {
             // Handle Forbidden/RBAC errors gracefully
-            if (error.message.includes('Forbidden') || error.message.includes('forbidden')) {
+            if (error instanceof Error && (error.message.includes('Forbidden') || error.message.includes('forbidden'))) {
                 console.warn('Listing namespaces forbidden, falling back to "default" namespace');
                 return res.json([{
                     name: 'default',
@@ -74,38 +139,54 @@ app.get('/api/namespaces', async (req, res) => {
             }
             throw error;
         }
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        res.status(500).json({ error: error instanceof Error ? error.message : 'An unknown error occurred' });
     }
 });
 
-app.get('/api/pods', async (req, res) => {
+app.get('/api/pods', cacheMiddleware(5000), async (req, res) => {
     const { namespace } = req.query;
     try {
         const { stdout: currentContext } = await execAsync('kubectl config current-context', { maxBuffer: MAX_BUFFER });
         const clusterName = currentContext.trim();
 
         const nsArg = namespace ? `-n ${namespace}` : '--all-namespaces';
-        try {
-            const { stdout } = await execAsync(`kubectl get pods ${nsArg} -o json`, { maxBuffer: MAX_BUFFER });
-            const data = JSON.parse(stdout);
+        const jsonPath = '-o=jsonpath=\'{range .items[*]}{.metadata.name}{" "}{.metadata.namespace}{" "}{.status.phase}{" "}{range .spec.containers[*]}{.name}{","}{end}{"\\n"}{end}\'';
 
-            res.json(data.items.map((pod: any) => ({
-                name: pod.metadata.name,
-                namespace: pod.metadata.namespace,
-                cluster: clusterName,
-                status: pod.status.phase,
-                containers: pod.spec.containers.map((c: any) => c.name),
-            })));
-        } catch (error: any) {
-            if (error.message.includes('Forbidden') || error.message.includes('forbidden')) {
+        try {
+            const { stdout } = await execAsync(`kubectl get pods ${nsArg} ${jsonPath}`, { maxBuffer: MAX_BUFFER });
+            
+            const pods = stdout.split('\n').filter(line => line.trim()).map(line => {
+                const parts = line.split(' ');
+                const name = parts[0];
+                const podNamespace = parts[1];
+                const status = parts[2];
+                // container names are comma-separated, remove trailing comma
+                const containers = (parts[3] || '').replace(/,$/, '').split(',').filter(Boolean);
+
+                return {
+                    name,
+                    namespace: podNamespace,
+                    cluster: clusterName,
+                    status,
+                    containers,
+                };
+            });
+
+            res.json(pods);
+        } catch (error: unknown) {
+            if (error instanceof Error && (error.message.includes('Forbidden') || error.message.includes('forbidden'))) {
                 console.warn(`Listing pods in ${nsArg} forbidden`);
+                return res.json([]);
+            }
+            // Handle cases where no resources are found, which can be an error for jsonpath
+            if (error instanceof Error && error.message.includes('no resources found')) {
                 return res.json([]);
             }
             throw error;
         }
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        res.status(500).json({ error: error instanceof Error ? error.message : 'An unknown error occurred' });
     }
 });
 
@@ -117,28 +198,40 @@ app.get('/api/pods/:pod/describe', async (req, res) => {
     try {
         const { stdout } = await execAsync(`kubectl describe pod ${pod} -n ${namespace}`, { maxBuffer: MAX_BUFFER });
         res.send(stdout);
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        res.status(500).json({ error: error instanceof Error ? error.message : 'An unknown error occurred' });
     }
 });
 
-app.get('/api/pods/:pod/events', async (req, res) => {
+app.get('/api/pods/:pod/events', cacheMiddleware(5000), async (req, res) => {
     const { pod } = req.params;
     const { namespace } = req.query;
     if (!namespace) return res.status(400).json({ error: 'Namespace is required' });
 
     try {
-        const { stdout } = await execAsync(`kubectl get events -n ${namespace} --field-selector involvedObject.name=${pod} -o json`, { maxBuffer: MAX_BUFFER });
+        // First, get the pod's UID
+        const { stdout: uid } = await execAsync(`kubectl get pod ${pod} -n ${namespace} -o jsonpath='{.metadata.uid}'`, { maxBuffer: MAX_BUFFER });
+
+        if (!uid) {
+            return res.json([]);
+        }
+
+        // Then, get events using the UID
+        const { stdout } = await execAsync(`kubectl get events -n ${namespace} --field-selector involvedObject.uid=${uid} -o json`, { maxBuffer: MAX_BUFFER });
         const data = JSON.parse(stdout);
-        res.json(data.items.map((event: any) => ({
+        res.json(data.items.map((event: KubernetesEvent) => ({
             type: event.type,
             reason: event.reason,
             message: event.message,
             lastTimestamp: event.lastTimestamp || event.eventTime || event.firstTimestamp,
             count: event.count
         })));
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        // It's common for no events to be found, which can cause an error.
+        if (error instanceof Error && error.message.toLowerCase().includes('no resources found')) {
+            return res.json([]);
+        }
+        res.status(500).json({ error: error instanceof Error ? error.message : 'An unknown error occurred' });
     }
 });
 
@@ -156,8 +249,8 @@ app.get('/api/logs', async (req, res) => {
 
         const { stdout } = await execAsync(command, { maxBuffer: MAX_BUFFER });
         res.send(stdout);
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+        res.status(500).json({ error: error instanceof Error ? error.message : 'An unknown error occurred' });
     }
 });
 
@@ -200,6 +293,26 @@ app.get('/api/logs/stream', (req, res) => {
     req.on('close', () => {
         kubectl.kill();
     });
+});
+
+app.get('/api/namespaces/:namespace/events', cacheMiddleware(5000), async (req, res) => {
+    const { namespace } = req.params;
+    try {
+        const { stdout } = await execAsync(`kubectl get events -n ${namespace} -o json`, { maxBuffer: MAX_BUFFER });
+        const data = JSON.parse(stdout);
+        res.json(data.items.map((event: KubernetesEvent) => ({
+            type: event.type,
+            reason: event.reason,
+            message: event.message,
+            lastTimestamp: event.lastTimestamp || event.eventTime || event.firstTimestamp,
+            count: event.count
+        })));
+    } catch (error: unknown) {
+        if (error instanceof Error && error.message.toLowerCase().includes('no resources found')) {
+            return res.json([]);
+        }
+        res.status(500).json({ error: error instanceof Error ? error.message : 'An unknown error occurred' });
+    }
 });
 
 // Serve static files from the Vite build

@@ -2,6 +2,45 @@ import { Cluster, Namespace, Pod, LogEntry, LogLevel } from '@/types/logs';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api';
 
+// --- Client-side Caching ---
+interface CacheEntry {
+  data: unknown;
+  expires: number;
+}
+const apiCache = new Map<string, CacheEntry>();
+const DEFAULT_CACHE_TTL = 5000; // 5 seconds
+
+async function cachedFetch(url: string, ttl = DEFAULT_CACHE_TTL, options?: RequestInit) {
+  const cached = apiCache.get(url);
+  if (cached && cached.expires > Date.now()) {
+    const headers = typeof cached.data === 'string'
+      ? { 'Content-Type': 'text/plain' }
+      : { 'Content-Type': 'application/json' };
+    const body = typeof cached.data === 'string' ? cached.data : JSON.stringify(cached.data);
+    
+    return Promise.resolve(new Response(body, { status: 200, headers }));
+  }
+
+  const response = await fetch(url, options);
+  if (response.ok && (options?.method === 'GET' || !options?.method)) {
+    const resClone = response.clone();
+    try {
+      const data = await resClone.json();
+      apiCache.set(url, { data, expires: Date.now() + ttl });
+    } catch (e) {
+      // Not a JSON response, assume text
+      const data = await response.clone().text();
+      apiCache.set(url, { data, expires: Date.now() + ttl });
+    }
+  }
+  return response;
+}
+
+function clearCache() {
+  apiCache.clear();
+}
+// --- End Caching ---
+
 export interface K8sConnectionStatus {
   connected: boolean;
   error?: string;
@@ -24,7 +63,7 @@ export async function checkConnection(): Promise<K8sConnectionStatus> {
 
 export async function fetchClusters(): Promise<Cluster[]> {
   try {
-    const response = await fetch(`${API_BASE_URL}/clusters`);
+    const response = await cachedFetch(`${API_BASE_URL}/clusters`, 60000); // Cache for 1 minute
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } catch (error) {
@@ -41,6 +80,7 @@ export async function switchCluster(clusterId: string): Promise<void> {
       body: JSON.stringify({ id: clusterId }),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    clearCache(); // Invalidate cache on switch
   } catch (error) {
     console.error('Failed to switch cluster:', error);
     throw error;
@@ -49,7 +89,7 @@ export async function switchCluster(clusterId: string): Promise<void> {
 
 export async function fetchNamespaces(): Promise<Namespace[]> {
   try {
-    const response = await fetch(`${API_BASE_URL}/namespaces`);
+    const response = await cachedFetch(`${API_BASE_URL}/namespaces`, 10000); // Cache for 10 seconds
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } catch (error) {
@@ -64,7 +104,7 @@ export async function fetchPods(namespace?: string): Promise<Pod[]> {
       ? `${API_BASE_URL}/pods?namespace=${namespace}`
       : `${API_BASE_URL}/pods`;
 
-    const response = await fetch(url);
+    const response = await cachedFetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } catch (error) {
@@ -85,7 +125,7 @@ export async function fetchPodLogs(
       url += `&container=${container}`;
     }
 
-    const response = await fetch(url);
+    const response = await fetch(url); // Logs are not cached
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const text = await response.text();
@@ -240,7 +280,7 @@ function parseSingleLogLine(
 
 export async function fetchPodDescribe(namespace: string, pod: string): Promise<string> {
   try {
-    const response = await fetch(`${API_BASE_URL}/pods/${pod}/describe?namespace=${namespace}`);
+    const response = await cachedFetch(`${API_BASE_URL}/pods/${pod}/describe?namespace=${namespace}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.text();
   } catch (error) {
@@ -259,7 +299,7 @@ export interface PodEvent {
 
 export async function fetchPodEvents(namespace: string, pod: string): Promise<PodEvent[]> {
   try {
-    const response = await fetch(`${API_BASE_URL}/pods/${pod}/events?namespace=${namespace}`);
+    const response = await cachedFetch(`${API_BASE_URL}/pods/${pod}/events?namespace=${namespace}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } catch (error) {
