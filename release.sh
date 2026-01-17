@@ -52,3 +52,11 @@ echo "$CURRENT_REV" > "$CACHE_FILE"
 
 echo "✅ Success! KubeLensy is now installed in your Applications folder."
 echo "👉 You can open it with: open -a KubeLensy"
+
+# 6. Upload DMG to GitHub Release (optional)
+if command -v gh &> /dev/null; then
+    echo "🚀 Uploading DMG to GitHub Release..."
+    gh release create "v$CURRENT_REV" "release/KubeLensy-0.0.0-arm64.dmg" --title "KubeLensy $CURRENT_REV" --notes "Automated release for $CURRENT_REV"
+else
+    echo "⚠️  GitHub CLI (gh) not found. Skipping upload to GitHub Releases."
+fi
