@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Terminal, RefreshCw, Trash2, Info } from 'lucide-react';
-import { FilterState } from '@/types/logs';
+import { Terminal, RefreshCw, Trash2, Info, Clock, Activity, CheckCircle, AlertTriangle } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { FilterState, Pod } from '@/types/logs';
 import { ConnectionStatus } from './ConnectionStatus';
 import { cn } from '@/lib/utils';
 
@@ -15,6 +16,7 @@ interface HeaderProps {
   error: string | null;
   onRetryConnection: () => void;
   lastUpdate?: number;
+  selectedPod?: Pod;
 }
 
 export function Header({
@@ -27,7 +29,8 @@ export function Header({
   loading,
   error,
   onRetryConnection,
-  lastUpdate
+  lastUpdate,
+  selectedPod
 }: HeaderProps) {
   const [pulseLive, setPulseLive] = useState(false);
 
@@ -38,12 +41,6 @@ export function Header({
       return () => clearTimeout(timer);
     }
   }, [lastUpdate]);
-  const activeFilters = [
-    filters.cluster,
-    filters.namespace,
-    filters.pod,
-    filters.container,
-  ].filter(Boolean);
 
   return (
     <header className="bg-card border-b border-border px-6 py-3">
@@ -82,6 +79,23 @@ export function Header({
 
         {/* Actions */}
         <div className="flex items-center gap-2">
+          {selectedPod && (
+            <div className="hidden lg:flex items-center gap-4 mr-4 text-xs font-medium text-muted-foreground border-r border-border pr-4 bg-secondary/20 p-1.5 rounded-md">
+              <div className="flex items-center gap-1.5" title="Ready Containers">
+                <CheckCircle className="w-3.5 h-3.5 text-success" />
+                <span>{selectedPod.ready || 'N/A'}</span>
+              </div>
+              <div className="flex items-center gap-1.5" title="Restart Count">
+                <Activity className={cn("w-3.5 h-3.5", (selectedPod.restartCount || 0) > 0 ? "text-warning" : "text-muted-foreground")} />
+                <span>{selectedPod.restartCount || 0} Restarts</span>
+              </div>
+              <div className="flex items-center gap-1.5" title="Age">
+                <Clock className="w-3.5 h-3.5" />
+                <span>{selectedPod.creationTimestamp ? formatDistanceToNow(new Date(selectedPod.creationTimestamp)) : 'Unknown'}</span>
+              </div>
+            </div>
+          )}
+
           {filters.pod && (
             <button
               onClick={onShowDetails}

@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
@@ -81,7 +82,13 @@ const cacheMiddleware = (ttlMs: number) => (req: Request, res: Response, next: N
 
 
 app.use(cors());
+app.use(compression()); // Enable gzip compression
 app.use(express.json());
+
+// Lightweight health check for connection status polling
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: Date.now() });
+});
 
 app.get('/api/clusters', cacheMiddleware(60000), async (req, res) => {
     try {
@@ -151,25 +158,25 @@ app.get('/api/pods', cacheMiddleware(5000), async (req, res) => {
         const clusterName = currentContext.trim();
 
         const nsArg = namespace ? `-n ${namespace}` : '--all-namespaces';
-        const jsonPath = '-o=jsonpath=\'{range .items[*]}{.metadata.name}{" "}{.metadata.namespace}{" "}{.status.phase}{" "}{range .spec.containers[*]}{.name}{","}{end}{"\\n"}{end}\'';
-
         try {
-            const { stdout } = await execAsync(`kubectl get pods ${nsArg} ${jsonPath}`, { maxBuffer: MAX_BUFFER });
-            
-            const pods = stdout.split('\n').filter(line => line.trim()).map(line => {
-                const parts = line.split(' ');
-                const name = parts[0];
-                const podNamespace = parts[1];
-                const status = parts[2];
-                // container names are comma-separated, remove trailing comma
-                const containers = (parts[3] || '').replace(/,$/, '').split(',').filter(Boolean);
+            const { stdout } = await execAsync(`kubectl get pods ${nsArg} -o json`, { maxBuffer: MAX_BUFFER });
+            const data = JSON.parse(stdout);
+
+            const pods = data.items.map((item: any) => {
+                const containerStatuses = item.status?.containerStatuses || [];
+                const restartCount = containerStatuses.reduce((acc: number, c: any) => acc + (c.restartCount || 0), 0);
+                const readyCount = containerStatuses.filter((c: any) => c.ready).length;
+                const totalContainers = item.spec?.containers?.length || 0;
 
                 return {
-                    name,
-                    namespace: podNamespace,
+                    name: item.metadata.name,
+                    namespace: item.metadata.namespace,
                     cluster: clusterName,
-                    status,
-                    containers,
+                    status: item.status?.phase || 'Unknown',
+                    containers: item.spec?.containers?.map((c: any) => c.name) || [],
+                    restartCount,
+                    creationTimestamp: item.metadata.creationTimestamp,
+                    ready: `${readyCount}/${totalContainers}`
                 };
             });
 

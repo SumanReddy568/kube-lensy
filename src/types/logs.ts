@@ -28,6 +28,9 @@ export interface Pod {
   cluster: string;
   status: 'Running' | 'Pending' | 'Failed' | 'Succeeded' | 'Unknown';
   containers: string[];
+  restartCount: number;
+  creationTimestamp: string;
+  ready: string;
 }
 
 export interface FilterState {

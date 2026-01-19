@@ -77,6 +77,10 @@ export function LogViewer() {
     });
   }, [logs, filters, clusters]);
 
+  const selectedPod = useMemo(() => {
+    return pods.find(p => p.name === filters.pod && p.namespace === filters.namespace);
+  }, [pods, filters.pod, filters.namespace]);
+
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden font-sans">
       <Header
@@ -90,6 +94,7 @@ export function LogViewer() {
         error={k8sError}
         onRetryConnection={checkConnection}
         lastUpdate={lastUpdate}
+        selectedPod={selectedPod}
       />
 
       {/* Connection Banner */}

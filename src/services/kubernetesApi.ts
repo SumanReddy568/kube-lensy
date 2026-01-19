@@ -17,7 +17,7 @@ async function cachedFetch(url: string, ttl = DEFAULT_CACHE_TTL, options?: Reque
       ? { 'Content-Type': 'text/plain' }
       : { 'Content-Type': 'application/json' };
     const body = typeof cached.data === 'string' ? cached.data : JSON.stringify(cached.data);
-    
+
     return Promise.resolve(new Response(body, { status: 200, headers }));
   }
 
@@ -48,9 +48,9 @@ export interface K8sConnectionStatus {
 
 export async function checkConnection(): Promise<K8sConnectionStatus> {
   try {
-    const response = await fetch(`${API_BASE_URL}/clusters`, {
+    const response = await fetch(`${API_BASE_URL}/health`, {
       method: 'GET',
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(2000), // Reduce timeout for faster feedback
     });
     if (response.ok) {
       return { connected: true };
