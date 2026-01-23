@@ -98,6 +98,21 @@ export async function fetchNamespaces(): Promise<Namespace[]> {
   }
 }
 
+export async function addManualNamespace(name: string): Promise<void> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/namespaces/manual`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    clearCache();
+  } catch (error) {
+    console.error('Failed to add manual namespace:', error);
+    throw error;
+  }
+}
+
 export async function fetchPods(namespace?: string): Promise<Pod[]> {
   try {
     const url = namespace

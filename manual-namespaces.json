@@ -1,0 +1,18 @@
+[
+  {
+    "name": "stag-preprod",
+    "cluster": "suman.d@browserstack-euc1-1.eu-central-1.eksctl.io"
+  },
+  {
+    "name": "stag-k8s",
+    "cluster": "suman.d@browserstack-euc1-1.eu-central-1.eksctl.io"
+  },
+  {
+    "name": "preprod-rails-automate",
+    "cluster": "suman.d@browserstack-euc1-1.eu-central-1.eksctl.io"
+  },
+  {
+    "name": "preprod-rails-appautomate",
+    "cluster": "suman.d@browserstack-euc1-1.eu-central-1.eksctl.io"
+  }
+]

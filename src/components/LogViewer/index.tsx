@@ -31,7 +31,8 @@ export function LogViewer() {
     pods,
     checkConnection,
     switchCluster,
-    refreshPods
+    refreshPods,
+    refreshNamespaces
   } = useKubernetes();
 
   // Real pod logs
@@ -78,7 +79,8 @@ export function LogViewer() {
   }, [logs, filters, clusters]);
 
   const selectedPod = useMemo(() => {
-    return pods.find(p => p.name === filters.pod && p.namespace === filters.namespace);
+    if (!filters.pod) return undefined;
+    return pods.find(p => p.name === filters.pod && (!filters.namespace || p.namespace === filters.namespace));
   }, [pods, filters.pod, filters.namespace]);
 
   return (
@@ -109,6 +111,7 @@ export function LogViewer() {
         clusters={clusters}
         namespaces={namespaces}
         pods={pods}
+        onRefreshNamespaces={refreshNamespaces}
       />
 
       {/* Main Content */}

@@ -122,11 +122,21 @@ export function useKubernetes() {
     return () => clearInterval(interval);
   }, [checkConnection]);
 
+  const refreshNamespaces = useCallback(async () => {
+    try {
+      const namespaces = await k8sApi.fetchNamespaces();
+      setState(prev => ({ ...prev, namespaces }));
+    } catch (error) {
+      console.error('Failed to refresh namespaces:', error);
+    }
+  }, []);
+
   return {
     ...state,
     checkConnection: () => checkConnection(false), // Manual retry is never silent
     switchCluster,
     refreshPods,
+    refreshNamespaces,
   };
 }
 

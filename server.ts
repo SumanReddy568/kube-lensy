@@ -14,6 +14,11 @@ interface KubernetesNamespace {
     };
 }
 
+interface ManualNamespace {
+    name: string;
+    cluster: string;
+}
+
 interface KubernetesEvent {
     type: string;
     reason: string;
@@ -63,6 +68,29 @@ class Cache<T> {
 }
 
 const apiCache = new Cache<unknown>();
+
+const MANUAL_NAMESPACES_FILE = path.join(_dirname, 'manual-namespaces.json');
+
+function getManualNamespaces(): ManualNamespace[] {
+    try {
+        if (fs.existsSync(MANUAL_NAMESPACES_FILE)) {
+            const content = fs.readFileSync(MANUAL_NAMESPACES_FILE, 'utf-8');
+            return JSON.parse(content);
+        }
+    } catch (e) {
+        console.error('Failed to read manual namespaces:', e);
+    }
+    return [];
+}
+
+function saveManualNamespace(ns: ManualNamespace) {
+    const list = getManualNamespaces();
+    if (!list.some(item => item.name === ns.name && item.cluster === ns.cluster)) {
+        list.push(ns);
+        fs.writeFileSync(MANUAL_NAMESPACES_FILE, JSON.stringify(list, null, 2));
+        apiCache.clear();
+    }
+}
 
 const cacheMiddleware = (ttlMs: number) => (req: Request, res: Response, next: NextFunction) => {
     const key = req.originalUrl;
@@ -125,27 +153,83 @@ app.post('/api/clusters/switch', async (req, res) => {
 
 app.get('/api/namespaces', cacheMiddleware(10000), async (req, res) => {
     try {
-        const { stdout: currentContext } = await execAsync('kubectl config current-context', { maxBuffer: MAX_BUFFER });
-        const clusterName = currentContext.trim();
+        const [
+            { stdout: contextsOutput },
+            { stdout: currentContextOutput }
+        ] = await Promise.all([
+            execAsync('kubectl config get-contexts -o name', { maxBuffer: MAX_BUFFER }),
+            execAsync('kubectl config current-context', { maxBuffer: MAX_BUFFER })
+        ]);
+
+        const contexts = contextsOutput.split('\n').filter(Boolean);
+        const currentContext = currentContextOutput.trim();
+
+        const manualNamespaces = new Set<string>();
+        const persistedManualNamespaces = getManualNamespaces()
+            .filter(ns => ns.cluster === currentContext)
+            .map(ns => ns.name);
+
+        persistedManualNamespaces.forEach(name => manualNamespaces.add(name));
+
+        // Also try to get all namespaces mentioned in kubeconfig for the current context's cluster
+        const { stdout: allContextsJson } = await execAsync('kubectl config view -o json', { maxBuffer: MAX_BUFFER });
+        const kubeconfig = JSON.parse(allContextsJson);
+
+        // Find the cluster name for the current context
+        const currentContextObj = kubeconfig.contexts?.find((ctx: any) => ctx.name === currentContext);
+        const currentClusterName = currentContextObj?.context?.cluster;
+
+        if (kubeconfig.contexts) {
+            kubeconfig.contexts.forEach((ctx: any) => {
+                // Only include if it matches the current cluster to avoid showing "all namespaces" from other clusters
+                if (ctx.context?.cluster === currentClusterName && ctx.context?.namespace) {
+                    manualNamespaces.add(ctx.context.namespace);
+                }
+            });
+        }
 
         try {
             const { stdout } = await execAsync('kubectl get namespaces -o json', { maxBuffer: MAX_BUFFER });
             const data = JSON.parse(stdout);
-            res.json(data.items.map((ns: KubernetesNamespace) => ({
-                name: ns.metadata.name,
-                cluster: clusterName,
+            const discoveredNamespaces = data.items.map((ns: KubernetesNamespace) => ns.metadata.name);
+
+            // Merge discovered and manual namespaces
+            const allNamespaces = new Set([...discoveredNamespaces, ...Array.from(manualNamespaces)]);
+
+            res.json(Array.from(allNamespaces).map(name => ({
+                name,
+                cluster: currentContext, // Associate with current cluster for now
             })));
         } catch (error: unknown) {
             // Handle Forbidden/RBAC errors gracefully
             if (error instanceof Error && (error.message.includes('Forbidden') || error.message.includes('forbidden'))) {
-                console.warn('Listing namespaces forbidden, falling back to "default" namespace');
-                return res.json([{
-                    name: 'default',
-                    cluster: clusterName,
-                }]);
+                console.warn('Listing namespaces forbidden, falling back to manual namespaces or "default"');
+                const fallbackNamespaces = manualNamespaces.size > 0
+                    ? Array.from(manualNamespaces)
+                    : ['default'];
+
+                return res.json(fallbackNamespaces.map(name => ({
+                    name,
+                    cluster: currentContext,
+                })));
             }
             throw error;
         }
+    } catch (error: unknown) {
+        res.status(500).json({ error: error instanceof Error ? error.message : 'An unknown error occurred' });
+    }
+});
+
+app.post('/api/namespaces/manual', async (req, res) => {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'Name is required' });
+
+    try {
+        const { stdout: currentContextOutput } = await execAsync('kubectl config current-context', { maxBuffer: MAX_BUFFER });
+        const currentContext = currentContextOutput.trim();
+
+        saveManualNamespace({ name, cluster: currentContext });
+        res.json({ success: true });
     } catch (error: unknown) {
         res.status(500).json({ error: error instanceof Error ? error.message : 'An unknown error occurred' });
     }

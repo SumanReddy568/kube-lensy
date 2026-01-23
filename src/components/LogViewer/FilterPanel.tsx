@@ -13,6 +13,19 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Separator } from "@/components/ui/separator";
+import { Plus } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { useState } from 'react';
+import { addManualNamespace } from '@/services/kubernetesApi';
+import { useToast } from "@/components/ui/use-toast";
 
 interface FilterPanelProps {
   filters: FilterState;
@@ -20,9 +33,14 @@ interface FilterPanelProps {
   clusters: Cluster[];
   namespaces: Namespace[];
   pods: Pod[];
+  onRefreshNamespaces: () => void;
 }
 
-export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pods }: FilterPanelProps) {
+export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pods, onRefreshNamespaces }: FilterPanelProps) {
+  const [isAddNamespaceOpen, setIsAddNamespaceOpen] = useState(false);
+  const [newNamespace, setNewNamespace] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const filteredNamespaces = namespaces.filter(
     ns => !filters.cluster || ns.cluster === filters.cluster
   );
@@ -41,7 +59,7 @@ export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pod
       namespace: null,
       pod: null,
       container: null,
-      levels: [],
+      levels: ['error', 'warn', 'info', 'debug'],
       search: ""
     });
   };
@@ -51,6 +69,22 @@ export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pod
       ...filters,
       levels: value as LogLevel[]
     });
+  };
+
+  const handleAddNamespace = async () => {
+    if (!newNamespace.trim()) return;
+
+    setIsSubmitting(true);
+    try {
+      await addManualNamespace(newNamespace.trim());
+      onRefreshNamespaces();
+      setIsAddNamespaceOpen(false);
+      setNewNamespace("");
+    } catch (error) {
+      console.error('Failed to add namespace:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -174,6 +208,42 @@ export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pod
                 ))}
               </SelectContent>
             </Select>
+
+            <Dialog open={isAddNamespaceOpen} onOpenChange={setIsAddNamespaceOpen}>
+              <DialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors">
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                  <DialogTitle>Add Namespace Manually</DialogTitle>
+                  <DialogDescription>
+                    Enter the name of the namespace you want to add. It will be saved for the current cluster context.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <label htmlFor="name" className="text-right text-sm">
+                      Name
+                    </label>
+                    <Input
+                      id="name"
+                      value={newNamespace}
+                      onChange={(e) => setNewNamespace(e.target.value)}
+                      className="col-span-3"
+                      placeholder="e.g. my-namespace"
+                      onKeyDown={(e) => e.key === 'Enter' && handleAddNamespace()}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button type="submit" onClick={handleAddNamespace} disabled={isSubmitting || !newNamespace.trim()}>
+                    {isSubmitting ? "Adding..." : "Add Namespace"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
 
           {/* Pod Select */}
@@ -182,13 +252,22 @@ export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pod
               <Box className="w-3.5 h-3.5" />
             </div>
             <Select
-              value={filters.pod || "all-pods"}
-              disabled={!filters.namespace && filteredNamespaces.length > 0}
-              onValueChange={(val) => onFilterChange({
-                ...filters,
-                pod: val === "all-pods" ? null : val,
-                container: null
-              })}
+              value={filters.pod && filters.namespace ? `${filters.namespace}/${filters.pod}` :
+                filters.pod ? pods.find(p => p.name === filters.pod)?.namespace + "/" + filters.pod : "all-pods"}
+              disabled={pods.length === 0}
+              onValueChange={(val) => {
+                if (val === "all-pods") {
+                  onFilterChange({ ...filters, pod: null, container: null });
+                } else {
+                  const [ns, name] = val.split('/');
+                  onFilterChange({
+                    ...filters,
+                    namespace: ns,
+                    pod: name,
+                    container: null
+                  });
+                }
+              }}
             >
               <SelectTrigger className="h-9 w-full bg-background/50 border-muted-foreground/20">
                 <SelectValue placeholder="All Pods" />
@@ -196,7 +275,7 @@ export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pod
               <SelectContent>
                 <SelectItem value="all-pods">All Pods</SelectItem>
                 {filteredPods.map(pod => (
-                  <SelectItem key={`${pod.cluster}-${pod.namespace}-${pod.name}`} value={pod.name}>
+                  <SelectItem key={`${pod.cluster}-${pod.namespace}-${pod.name}`} value={`${pod.namespace}/${pod.name}`}>
                     <div className="flex items-center justify-between gap-3 w-full max-w-[400px]">
                       <span className="truncate font-mono text-xs">{pod.name}</span>
                       <Badge variant={pod.status === 'Running' ? 'default' : 'secondary'} className="text-[9px] px-1 h-3.5 shrink-0 pointer-events-none">
