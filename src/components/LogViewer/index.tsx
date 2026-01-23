@@ -24,7 +24,11 @@ const loadFilters = (): FilterState => {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) {
     try {
-      return JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      // Validate structure to prevent crashes
+      if (parsed && Array.isArray(parsed.levels)) {
+        return parsed;
+      }
     } catch (e) {
       console.error('Failed to load filters:', e);
     }
@@ -141,8 +145,9 @@ export function LogViewer() {
         selectedPod={selectedPod}
         showErrorSummary={showErrorSummary}
         onToggleErrorSummary={() => {
-          setShowErrorSummary(!showErrorSummary);
-          if (!showErrorSummary) setShowPodDetails(false);
+          const next = !showErrorSummary;
+          setShowErrorSummary(next);
+          if (next) setShowPodDetails(false);
         }}
         errorCount={logs.filter(l => l.level === 'error').length}
       />
@@ -167,6 +172,17 @@ export function LogViewer() {
         <div className="flex-1 flex flex-col overflow-hidden">
           <LogList logs={filteredLogs} searchTerm={filters.search} />
         </div>
+
+        {showPodDetails && filters.pod && filters.namespace && (
+          <PodDetailsSidebar
+            podName={filters.pod}
+            namespace={filters.namespace}
+            onClose={() => {
+              setShowPodDetails(false);
+              localStorage.setItem('kubelensy_show_pod_details', 'false');
+            }}
+          />
+        )}
 
         {showErrorSummary && (
           <ErrorSummarySidebar

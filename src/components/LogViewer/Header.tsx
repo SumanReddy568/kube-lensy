@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Terminal, RefreshCw, Trash2, Info, Clock, Activity, CheckCircle, AlertTriangle, BarChart3 } from 'lucide-react';
+import { Terminal, RefreshCw, Trash2, Info, Clock, Activity, CheckCircle, AlertTriangle, BarChart3, Bug } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { FilterState, Pod } from '@/types/logs';
 import { ConnectionStatus } from './ConnectionStatus';
 import { cn } from '@/lib/utils';
+import { useNavigate } from 'react-router-dom';
 
 interface HeaderProps {
   filters: FilterState;
@@ -39,6 +40,7 @@ export function Header({
   errorCount
 }: HeaderProps) {
   const [pulseLive, setPulseLive] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (lastUpdate && lastUpdate > 0) {
@@ -53,7 +55,7 @@ export function Header({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-primary/20 rounded-lg">
+            <div className="p-1.5 bg-primary/20 rounded-lg" onClick={() => navigate('/debug-logs')} style={{ cursor: 'pointer' }} title="View Internal System Logs">
               <Terminal className="w-5 h-5 text-primary" />
             </div>
             <div>
@@ -133,6 +135,13 @@ export function Header({
                 {errorCount > 99 ? '99+' : errorCount}
               </span>
             )}
+          </button>
+          <button
+            onClick={() => navigate('/debug-logs')}
+            className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+            title="View Internal System Logs"
+          >
+            <Bug className="w-5 h-5" />
           </button>
           <button
             onClick={onRefresh}

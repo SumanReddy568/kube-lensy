@@ -41,12 +41,15 @@ export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pod
   const [newNamespace, setNewNamespace] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const filteredNamespaces = namespaces.filter(
-    ns => !filters.cluster || ns.cluster === filters.cluster
+  const nss = Array.isArray(namespaces) ? namespaces : [];
+  const filteredNamespaces = nss.filter(
+    ns => ns && (!filters.cluster || ns.cluster === filters.cluster)
   );
 
-  const filteredPods = pods.filter(
+  const pds = Array.isArray(pods) ? pods : [];
+  const filteredPods = pds.filter(
     pod =>
+      pod &&
       (!filters.cluster || pod.cluster === filters.cluster) &&
       (!filters.namespace || pod.namespace === filters.namespace)
   );
@@ -202,8 +205,8 @@ export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pod
               <SelectContent>
                 <SelectItem value="all-namespaces">All Namespaces</SelectItem>
                 {filteredNamespaces.map(ns => (
-                  <SelectItem key={`${ns.cluster}-${ns.name}`} value={ns.name}>
-                    <div className="max-w-[300px] truncate">{ns.name}</div>
+                  <SelectItem key={`${ns.cluster || 'none'}-${ns.name || Math.random()}`} value={ns.name || ""}>
+                    <div className="max-w-[300px] truncate">{ns.name || "Unknown"}</div>
                   </SelectItem>
                 ))}
               </SelectContent>

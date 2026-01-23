@@ -93,7 +93,8 @@ function getManualNamespaces(): ManualNamespace[] {
     try {
         if (fs.existsSync(MANUAL_NAMESPACES_FILE)) {
             const content = fs.readFileSync(MANUAL_NAMESPACES_FILE, 'utf-8');
-            return JSON.parse(content);
+            const parsed = JSON.parse(content);
+            return Array.isArray(parsed) ? parsed : [];
         }
     } catch (e) {
         console.error('Failed to read manual namespaces:', e);
@@ -105,6 +106,9 @@ function saveManualNamespace(ns: ManualNamespace) {
     const list = getManualNamespaces();
     if (!list.some(item => item.name === ns.name && item.cluster === ns.cluster)) {
         list.push(ns);
+        if (!fs.existsSync(STORAGE_PATH)) {
+            fs.mkdirSync(STORAGE_PATH, { recursive: true });
+        }
         fs.writeFileSync(MANUAL_NAMESPACES_FILE, JSON.stringify(list, null, 2));
         apiCache.clear();
     }
@@ -122,14 +126,49 @@ const cacheMiddleware = (ttlMs: number) => (req: Request, res: Response, next: N
         apiCache.set(key, body, ttlMs);
         return originalJson(body);
     };
-
     next();
 };
 
+const LOG_FILE = path.join(STORAGE_PATH, 'backend.log');
+const logStream = fs.createWriteStream(LOG_FILE, { flags: 'w' });
+
+// Enhanced logging that captures everything to backend.log
+const writeToLog = (type: 'STDOUT' | 'STDERR', msg: string) => {
+    const timestamp = new Date().toISOString();
+    const formatted = `[${timestamp}] [${type}] ${msg}\n`;
+    logStream.write(formatted);
+    if (type === 'STDOUT') {
+        process.stdout.write(formatted);
+    } else {
+        process.stderr.write(formatted);
+    }
+};
+
+// Override console methods to capture all logs
+console.log = (msg: any, ...args: any[]) => {
+    const output = typeof msg === 'string' ? msg : JSON.stringify(msg);
+    writeToLog('STDOUT', output);
+};
+console.error = (msg: any, ...args: any[]) => {
+    const output = typeof msg === 'string' ? msg : JSON.stringify(msg);
+    writeToLog('STDERR', output);
+};
+
+// Request logging middleware (must be FIRST)
+app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+        const duration = Date.now() - start;
+        console.log(`[NETWORK] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${duration}ms)`);
+    });
+    next();
+});
 
 app.use(cors());
-app.use(compression()); // Enable gzip compression
+app.use(compression());
 app.use(express.json());
+
+console.log('!!! KubeLensy Backend Logger Initialized !!!');
 
 // Lightweight health check for connection status polling
 app.get('/api/health', (req, res) => {
@@ -209,14 +248,14 @@ app.get('/api/namespaces', cacheMiddleware(10000), async (req, res) => {
         try {
             const { stdout } = await execWithTimeout('kubectl get namespaces -o json', 10000);
             const data = JSON.parse(stdout);
-            const discoveredNamespaces = data.items.map((ns: KubernetesNamespace) => ns.metadata.name);
+            const discoveredNamespaces = (data.items || []).map((ns: KubernetesNamespace) => ns.metadata.name);
 
             // Merge discovered and manual namespaces
             const allNamespaces = new Set([...discoveredNamespaces, ...Array.from(manualNamespaces)]);
 
             res.json(Array.from(allNamespaces).map(name => ({
                 name,
-                cluster: currentContext, // Associate with current cluster for now
+                cluster: currentContext,
             })));
         } catch (error: unknown) {
             // Handle Forbidden/RBAC errors gracefully
@@ -264,7 +303,7 @@ app.get('/api/pods', cacheMiddleware(5000), async (req, res) => {
             const { stdout } = await execWithTimeout(`kubectl get pods ${nsArg} -o json`, 20000); // Pods can take longer
             const data = JSON.parse(stdout);
 
-            const pods = data.items.map((item: any) => {
+            const pods = (data.items || []).map((item: any) => {
                 const containerStatuses = item.status?.containerStatuses || [];
                 const restartCount = containerStatuses.reduce((acc: number, c: any) => acc + (c.restartCount || 0), 0);
                 const readyCount = containerStatuses.filter((c: any) => c.ready).length;
@@ -328,7 +367,7 @@ app.get('/api/pods/:pod/events', cacheMiddleware(5000), async (req, res) => {
         // Then, get events using the UID
         const { stdout } = await execWithTimeout(`kubectl get events -n ${namespace} --field-selector involvedObject.uid=${uid} -o json`, 10000);
         const data = JSON.parse(stdout);
-        res.json(data.items.map((event: KubernetesEvent) => ({
+        res.json((data.items || []).map((event: KubernetesEvent) => ({
             type: event.type,
             reason: event.reason,
             message: event.message,
@@ -433,12 +472,48 @@ app.get('/api/logs/stream', (req, res) => {
     });
 });
 
+app.get('/api/debug/logs', (req, res) => {
+    const logPath = path.join(STORAGE_PATH, 'backend.log');
+    if (!fs.existsSync(logPath)) {
+        return res.send('No logs found yet.');
+    }
+    const content = fs.readFileSync(logPath, 'utf-8');
+    res.send(content);
+});
+
+app.get('/api/debug/logs/stream', (req, res) => {
+    const logPath = path.join(STORAGE_PATH, 'backend.log');
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    if (!fs.existsSync(logPath)) {
+        res.write('data: Waiting for logs...\n\n');
+    }
+
+    // Use tail -f to stream the log file
+    const tail = spawn('tail', ['-f', '-n', '100', logPath]);
+
+    tail.stdout.on('data', (data) => {
+        const lines = data.toString().split('\n');
+        lines.forEach((line: string) => {
+            if (line.trim()) {
+                res.write(`data: ${line}\n\n`);
+            }
+        });
+    });
+
+    req.on('close', () => {
+        tail.kill();
+    });
+});
+
 app.get('/api/namespaces/:namespace/events', cacheMiddleware(5000), async (req, res) => {
     const { namespace } = req.params;
     try {
         const { stdout } = await execWithTimeout(`kubectl get events -n ${namespace} -o json`, 10000);
         const data = JSON.parse(stdout);
-        res.json(data.items.map((event: KubernetesEvent) => ({
+        res.json((data.items || []).map((event: KubernetesEvent) => ({
             type: event.type,
             reason: event.reason,
             message: event.message,
@@ -460,6 +535,17 @@ const distPath = fs.existsSync(path.join(_dirname, 'dist'))
 
 if (fs.existsSync(distPath)) {
     app.use(express.static(distPath));
+    app.get('/debug', (req, res) => {
+        const paths = [
+            path.join(distPath, 'debug.html'),
+            path.join(_dirname, 'public/debug.html'),
+            path.join(_dirname, '../public/debug.html')
+        ];
+        const found = paths.find(p => fs.existsSync(p));
+        if (found) return res.sendFile(found);
+        res.status(404).send('Debugger UI not found');
+    });
+
     app.get('*fallback', (req, res) => {
         res.sendFile(path.join(distPath, 'index.html'));
     });
