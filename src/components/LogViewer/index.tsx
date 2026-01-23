@@ -6,6 +6,8 @@ import { ConnectionBanner } from './ConnectionStatus';
 import { FilterState } from '@/types/logs';
 import { useKubernetes, usePodLogs } from '@/hooks/useKubernetes';
 import { PodDetailsSidebar } from './PodDetailsSidebar';
+import { ErrorSummarySidebar } from './ErrorSummarySidebar';
+import { BarChart3 } from 'lucide-react';
 
 const initialFilters: FilterState = {
   cluster: null,
@@ -36,11 +38,8 @@ export function LogViewer() {
   const [showPodDetails, setShowPodDetails] = useState(() => {
     return localStorage.getItem('kubelensy_show_pod_details') === 'true';
   });
-  const initialSwitchRef = import.meta.env.DEV ? { current: false } : { current: false }; // We'll use a local ref
-  const hasAttemptedInitialSwitch = useState(false)[0]; // Actually let's use a proper ref
-  const initialSwitchDone = useState(false); // Using state just to be safe with re-renders
-
-  // Real Kubernetes connection
+  const [showErrorSummary, setShowErrorSummary] = useState(false);
+  //Kubernetes connection
   const {
     connected,
     loading: k8sLoading,
@@ -51,8 +50,9 @@ export function LogViewer() {
     checkConnection,
     switchCluster,
     refreshPods,
-    refreshNamespaces
-  } = useKubernetes();
+    refreshNamespaces,
+    appErrors
+  } = useKubernetes(filters.namespace || undefined);
 
   // Real pod logs
   const { logs, loading: logsLoading, refresh, clear, lastUpdate } = usePodLogs(
@@ -68,7 +68,9 @@ export function LogViewer() {
   useEffect(() => {
     if (connected && filters.cluster && clusters.length > 0) {
       const currentConnected = clusters.find(c => c.status === 'connected')?.id;
-      if (currentConnected && currentConnected !== filters.cluster) {
+      const targetExists = clusters.some(c => c.id === filters.cluster);
+
+      if (currentConnected && targetExists && currentConnected !== filters.cluster) {
         console.log(`Auto-switching to last cluster: ${filters.cluster}`);
         switchCluster(filters.cluster);
       }
@@ -127,6 +129,7 @@ export function LogViewer() {
         onShowDetails={() => {
           const next = !showPodDetails;
           setShowPodDetails(next);
+          if (next) setShowErrorSummary(false);
           localStorage.setItem('kubelensy_show_pod_details', String(next));
         }}
         isLive={isLive}
@@ -136,6 +139,12 @@ export function LogViewer() {
         onRetryConnection={checkConnection}
         lastUpdate={lastUpdate}
         selectedPod={selectedPod}
+        showErrorSummary={showErrorSummary}
+        onToggleErrorSummary={() => {
+          setShowErrorSummary(!showErrorSummary);
+          if (!showErrorSummary) setShowPodDetails(false);
+        }}
+        errorCount={logs.filter(l => l.level === 'error').length}
       />
 
       {/* Connection Banner */}
@@ -159,13 +168,14 @@ export function LogViewer() {
           <LogList logs={filteredLogs} searchTerm={filters.search} />
         </div>
 
-        {showPodDetails && filters.pod && filters.namespace && (
-          <PodDetailsSidebar
-            podName={filters.pod}
-            namespace={filters.namespace}
-            onClose={() => {
-              setShowPodDetails(false);
-              localStorage.setItem('kubelensy_show_pod_details', 'false');
+        {showErrorSummary && (
+          <ErrorSummarySidebar
+            logs={logs}
+            appErrors={appErrors}
+            onClose={() => setShowErrorSummary(false)}
+            onSelectError={(msg) => {
+              setFilters({ ...filters, search: msg });
+              setShowErrorSummary(false);
             }}
           />
         )}

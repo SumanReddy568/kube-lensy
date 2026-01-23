@@ -9,9 +9,10 @@ export interface K8sState {
   clusters: Cluster[];
   namespaces: Namespace[];
   pods: Pod[];
+  appErrors: Array<{ message: string; count: number; lastSeen: Date }>;
 }
 
-export function useKubernetes() {
+export function useKubernetes(initialNamespace?: string) {
   const [state, setState] = useState<K8sState>({
     connected: false,
     loading: true,
@@ -19,9 +20,34 @@ export function useKubernetes() {
     clusters: [],
     namespaces: [],
     pods: [],
+    appErrors: [],
   });
 
   const isInitialMount = useRef(true);
+  const initialNamespaceRef = useRef(initialNamespace);
+
+  const recordAppError = useCallback((message: string) => {
+    setState(prev => {
+      const existing = prev.appErrors.find(e => e.message === message);
+      if (existing) {
+        return {
+          ...prev,
+          appErrors: prev.appErrors.map(e =>
+            e.message === message ? { ...e, count: e.count + 1, lastSeen: new Date() } : e
+          )
+        };
+      }
+      return {
+        ...prev,
+        appErrors: [...prev.appErrors, { message, count: 1, lastSeen: new Date() }]
+      };
+    });
+  }, []);
+
+
+  useEffect(() => {
+    initialNamespaceRef.current = initialNamespace;
+  }, [initialNamespace]);
 
   const checkConnection = useCallback(async (silent = false) => {
     if (!silent) setState(prev => ({ ...prev, loading: true }));
@@ -44,8 +70,8 @@ export function useKubernetes() {
             namespaces,
           }));
 
-          // Fetch pods in background (slow)
-          k8sApi.fetchPods().then(pods => {
+          // Fetch pods in background (slow) - use the current namespace in ref
+          k8sApi.fetchPods(initialNamespaceRef.current || undefined).then(pods => {
             setState(prev => ({ ...prev, pods }));
           }).catch(e => console.error('Background pod fetch failed:', e));
         } else {
@@ -100,16 +126,18 @@ export function useKubernetes() {
       }));
 
       // Fetch pods in background
-      k8sApi.fetchPods().then(pods => {
+      k8sApi.fetchPods(initialNamespaceRef.current || undefined).then(pods => {
         setState(prev => ({ ...prev, pods }));
       }).catch(e => console.error('Background pod fetch failed after switch:', e));
 
     } catch (error) {
-      console.error('Failed to switch cluster:', error);
+      const msg = error instanceof Error ? error.message : 'Failed to switch cluster';
+      console.error('Failed to switch cluster:', msg);
+      recordAppError(`Cluster Switch Error: ${msg}`);
       setState(prev => ({
         ...prev,
         loading: false,
-        error: error instanceof Error ? error.message : 'Failed to switch cluster'
+        error: msg
       }));
     }
   }, []);
@@ -140,9 +168,11 @@ export function useKubernetes() {
       const namespaces = await k8sApi.fetchNamespaces();
       setState(prev => ({ ...prev, namespaces }));
     } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
       console.error('Failed to refresh namespaces:', error);
+      recordAppError(`Namespace Sync Error: ${msg}`);
     }
-  }, []);
+  }, [recordAppError]);
 
   return {
     ...state,

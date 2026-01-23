@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Terminal, RefreshCw, Trash2, Info, Clock, Activity, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Terminal, RefreshCw, Trash2, Info, Clock, Activity, CheckCircle, AlertTriangle, BarChart3 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { FilterState, Pod } from '@/types/logs';
 import { ConnectionStatus } from './ConnectionStatus';
@@ -17,6 +17,9 @@ interface HeaderProps {
   onRetryConnection: () => void;
   lastUpdate?: number;
   selectedPod?: Pod;
+  showErrorSummary?: boolean;
+  onToggleErrorSummary?: () => void;
+  errorCount?: number;
 }
 
 export function Header({
@@ -30,7 +33,10 @@ export function Header({
   error,
   onRetryConnection,
   lastUpdate,
-  selectedPod
+  selectedPod,
+  showErrorSummary,
+  onToggleErrorSummary,
+  errorCount
 }: HeaderProps) {
   const [pulseLive, setPulseLive] = useState(false);
 
@@ -99,13 +105,35 @@ export function Header({
           {filters.pod && (
             <button
               onClick={onShowDetails}
-              className="px-3 py-1.5 flex items-center gap-2 bg-secondary text-foreground hover:bg-secondary/80 rounded-lg transition-colors text-sm font-medium mr-2"
+              className={cn(
+                "px-3 py-1.5 flex items-center gap-2 rounded-lg transition-colors text-sm font-medium mr-2",
+                "bg-secondary text-foreground hover:bg-secondary/80"
+              )}
               title="Show pod details"
             >
               <Info className="w-4 h-4" />
               Pod Details
             </button>
           )}
+
+          <button
+            onClick={onToggleErrorSummary}
+            className={cn(
+              "px-3 py-1.5 flex items-center gap-2 rounded-lg transition-colors text-sm font-medium mr-2 relative",
+              showErrorSummary
+                ? "bg-destructive/20 text-destructive border border-destructive/30"
+                : "bg-secondary text-foreground hover:bg-secondary/80"
+            )}
+            title="Show error summary"
+          >
+            <BarChart3 className="w-4 h-4" />
+            Error Insights
+            {errorCount !== undefined && errorCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-destructive text-[9px] font-bold text-white border-2 border-card">
+                {errorCount > 99 ? '99+' : errorCount}
+              </span>
+            )}
+          </button>
           <button
             onClick={onRefresh}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors"
