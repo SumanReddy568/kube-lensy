@@ -42,6 +42,23 @@ const _dirname = getDirname();
 
 const execAsync = promisify(exec);
 const MAX_BUFFER = 1024 * 1024 * 50; // 50MB buffer for large K8s outputs
+
+async function execWithTimeout(command: string, timeoutMs: number = 10000) {
+    return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            reject(new Error(`Command timed out after ${timeoutMs}ms: ${command}`));
+        }, timeoutMs);
+
+        exec(command, { maxBuffer: MAX_BUFFER }, (error, stdout, stderr) => {
+            clearTimeout(timeout);
+            if (error) {
+                reject(error);
+                return;
+            }
+            resolve({ stdout, stderr });
+        });
+    });
+}
 const app = express();
 const port = 3001;
 
@@ -69,7 +86,8 @@ class Cache<T> {
 
 const apiCache = new Cache<unknown>();
 
-const MANUAL_NAMESPACES_FILE = path.join(_dirname, 'manual-namespaces.json');
+const STORAGE_PATH = process.env.USER_DATA_PATH || _dirname;
+const MANUAL_NAMESPACES_FILE = path.join(STORAGE_PATH, 'manual-namespaces.json');
 
 function getManualNamespaces(): ManualNamespace[] {
     try {
@@ -124,8 +142,8 @@ app.get('/api/clusters', cacheMiddleware(60000), async (req, res) => {
             { stdout: contextsOutput },
             { stdout: currentContext }
         ] = await Promise.all([
-            execAsync('kubectl config get-contexts -o name', { maxBuffer: MAX_BUFFER }),
-            execAsync('kubectl config current-context', { maxBuffer: MAX_BUFFER })
+            execWithTimeout('kubectl config get-contexts -o name', 5000),
+            execWithTimeout('kubectl config current-context', 5000)
         ]);
 
         const contexts = contextsOutput.split('\n').filter(Boolean);
@@ -143,7 +161,7 @@ app.get('/api/clusters', cacheMiddleware(60000), async (req, res) => {
 app.post('/api/clusters/switch', async (req, res) => {
     const { id } = req.body;
     try {
-        await execAsync(`kubectl config use-context ${id}`, { maxBuffer: MAX_BUFFER });
+        await execWithTimeout(`kubectl config use-context ${id}`, 15000); // Give it 15s for cluster switch
         apiCache.clear(); // Invalidate cache on cluster switch
         res.json({ success: true });
     } catch (error: unknown) {
@@ -157,8 +175,8 @@ app.get('/api/namespaces', cacheMiddleware(10000), async (req, res) => {
             { stdout: contextsOutput },
             { stdout: currentContextOutput }
         ] = await Promise.all([
-            execAsync('kubectl config get-contexts -o name', { maxBuffer: MAX_BUFFER }),
-            execAsync('kubectl config current-context', { maxBuffer: MAX_BUFFER })
+            execWithTimeout('kubectl config get-contexts -o name', 5000),
+            execWithTimeout('kubectl config current-context', 5000)
         ]);
 
         const contexts = contextsOutput.split('\n').filter(Boolean);
@@ -172,7 +190,7 @@ app.get('/api/namespaces', cacheMiddleware(10000), async (req, res) => {
         persistedManualNamespaces.forEach(name => manualNamespaces.add(name));
 
         // Also try to get all namespaces mentioned in kubeconfig for the current context's cluster
-        const { stdout: allContextsJson } = await execAsync('kubectl config view -o json', { maxBuffer: MAX_BUFFER });
+        const { stdout: allContextsJson } = await execWithTimeout('kubectl config view -o json', 5000);
         const kubeconfig = JSON.parse(allContextsJson);
 
         // Find the cluster name for the current context
@@ -189,7 +207,7 @@ app.get('/api/namespaces', cacheMiddleware(10000), async (req, res) => {
         }
 
         try {
-            const { stdout } = await execAsync('kubectl get namespaces -o json', { maxBuffer: MAX_BUFFER });
+            const { stdout } = await execWithTimeout('kubectl get namespaces -o json', 10000);
             const data = JSON.parse(stdout);
             const discoveredNamespaces = data.items.map((ns: KubernetesNamespace) => ns.metadata.name);
 
@@ -225,7 +243,7 @@ app.post('/api/namespaces/manual', async (req, res) => {
     if (!name) return res.status(400).json({ error: 'Name is required' });
 
     try {
-        const { stdout: currentContextOutput } = await execAsync('kubectl config current-context', { maxBuffer: MAX_BUFFER });
+        const { stdout: currentContextOutput } = await execWithTimeout('kubectl config current-context', 5000);
         const currentContext = currentContextOutput.trim();
 
         saveManualNamespace({ name, cluster: currentContext });
@@ -238,12 +256,12 @@ app.post('/api/namespaces/manual', async (req, res) => {
 app.get('/api/pods', cacheMiddleware(5000), async (req, res) => {
     const { namespace } = req.query;
     try {
-        const { stdout: currentContext } = await execAsync('kubectl config current-context', { maxBuffer: MAX_BUFFER });
+        const { stdout: currentContext } = await execWithTimeout('kubectl config current-context', 5000);
         const clusterName = currentContext.trim();
 
         const nsArg = namespace ? `-n ${namespace}` : '--all-namespaces';
         try {
-            const { stdout } = await execAsync(`kubectl get pods ${nsArg} -o json`, { maxBuffer: MAX_BUFFER });
+            const { stdout } = await execWithTimeout(`kubectl get pods ${nsArg} -o json`, 20000); // Pods can take longer
             const data = JSON.parse(stdout);
 
             const pods = data.items.map((item: any) => {
@@ -287,7 +305,7 @@ app.get('/api/pods/:pod/describe', async (req, res) => {
     if (!namespace) return res.status(400).json({ error: 'Namespace is required' });
 
     try {
-        const { stdout } = await execAsync(`kubectl describe pod ${pod} -n ${namespace}`, { maxBuffer: MAX_BUFFER });
+        const { stdout } = await execWithTimeout(`kubectl describe pod ${pod} -n ${namespace}`, 10000);
         res.send(stdout);
     } catch (error: unknown) {
         res.status(500).json({ error: error instanceof Error ? error.message : 'An unknown error occurred' });
@@ -301,14 +319,14 @@ app.get('/api/pods/:pod/events', cacheMiddleware(5000), async (req, res) => {
 
     try {
         // First, get the pod's UID
-        const { stdout: uid } = await execAsync(`kubectl get pod ${pod} -n ${namespace} -o jsonpath='{.metadata.uid}'`, { maxBuffer: MAX_BUFFER });
+        const { stdout: uid } = await execWithTimeout(`kubectl get pod ${pod} -n ${namespace} -o jsonpath='{.metadata.uid}'`, 5000);
 
         if (!uid) {
             return res.json([]);
         }
 
         // Then, get events using the UID
-        const { stdout } = await execAsync(`kubectl get events -n ${namespace} --field-selector involvedObject.uid=${uid} -o json`, { maxBuffer: MAX_BUFFER });
+        const { stdout } = await execWithTimeout(`kubectl get events -n ${namespace} --field-selector involvedObject.uid=${uid} -o json`, 10000);
         const data = JSON.parse(stdout);
         res.json(data.items.map((event: KubernetesEvent) => ({
             type: event.type,
@@ -338,10 +356,28 @@ app.get('/api/logs', async (req, res) => {
             command += ` -c ${container}`;
         }
 
-        const { stdout } = await execAsync(command, { maxBuffer: MAX_BUFFER });
-        res.send(stdout);
+        try {
+            const { stdout } = await execWithTimeout(command, 15000); // Logs can be slow
+            res.send(stdout);
+        } catch (error: any) {
+            const errorMessage = error.message || String(error);
+            if (errorMessage.includes('is terminated')) {
+                console.log(`Container terminated, trying previous logs for ${pod}`);
+                // Try fetching previous container logs
+                const prevCommand = `${command} -p`;
+                try {
+                    const { stdout: prevStdout } = await execWithTimeout(prevCommand, 15000);
+                    res.send(prevStdout);
+                } catch (prevError) {
+                    // If even previous fails, return empty or the original termination error
+                    res.send(`[Container Terminated] ${errorMessage}`);
+                }
+            } else {
+                throw error;
+            }
+        }
     } catch (error: unknown) {
-        res.status(500).json({ error: error instanceof Error ? error.message : 'An unknown error occurred' });
+        res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }
 });
 
@@ -361,6 +397,7 @@ app.get('/api/logs/stream', (req, res) => {
     }
 
     const kubectl = spawn('kubectl', args);
+    let errorSent = false;
 
     kubectl.stdout.on('data', (data) => {
         const lines = data.toString().split('\n');
@@ -372,8 +409,18 @@ app.get('/api/logs/stream', (req, res) => {
     });
 
     kubectl.stderr.on('data', (data) => {
-        console.error(`kubectl stderr: ${data}`);
-        res.write(`event: error\ndata: ${data}\n\n`);
+        const msg = data.toString();
+        console.error(`kubectl stderr: ${msg}`);
+        if (msg.includes('is terminated')) {
+            // If container is terminated, don't send an "error" event 
+            // instead just end the stream normally or send a message
+            res.write(`data: [Container Terminated] ${msg}\n\n`);
+            return;
+        }
+        if (!errorSent) {
+            res.write(`event: error\ndata: ${msg}\n\n`);
+            errorSent = true;
+        }
     });
 
     kubectl.on('close', (code) => {
@@ -389,7 +436,7 @@ app.get('/api/logs/stream', (req, res) => {
 app.get('/api/namespaces/:namespace/events', cacheMiddleware(5000), async (req, res) => {
     const { namespace } = req.params;
     try {
-        const { stdout } = await execAsync(`kubectl get events -n ${namespace} -o json`, { maxBuffer: MAX_BUFFER });
+        const { stdout } = await execWithTimeout(`kubectl get events -n ${namespace} -o json`, 10000);
         const data = JSON.parse(stdout);
         res.json(data.items.map((event: KubernetesEvent) => ({
             type: event.type,

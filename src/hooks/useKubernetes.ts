@@ -30,23 +30,24 @@ export function useKubernetes() {
       const status = await k8sApi.checkConnection();
 
       if (status.connected) {
-        // Only fetch full data on initial load or if we were disconnected
-        // This prevents the "every 10 seconds" refresh from resetting lists
         if (!state.connected || !silent) {
-          const [clusters, namespaces, pods] = await Promise.all([
-            k8sApi.fetchClusters().catch(e => { console.error(e); return []; }),
-            k8sApi.fetchNamespaces().catch(e => { console.error(e); return []; }),
-            k8sApi.fetchPods().catch(e => { console.error(e); return []; }),
-          ]);
+          // Fetch clusters and namespaces first (fast)
+          const clusters = await k8sApi.fetchClusters().catch(e => { console.error(e); return state.clusters; });
+          const namespaces = await k8sApi.fetchNamespaces().catch(e => { console.error(e); return state.namespaces; });
 
-          setState({
+          setState(prev => ({
+            ...prev,
             connected: true,
             loading: false,
             error: null,
             clusters,
             namespaces,
-            pods,
-          });
+          }));
+
+          // Fetch pods in background (slow)
+          k8sApi.fetchPods().then(pods => {
+            setState(prev => ({ ...prev, pods }));
+          }).catch(e => console.error('Background pod fetch failed:', e));
         } else {
           // Silent background check - just update connection status
           setState(prev => ({
@@ -81,23 +82,35 @@ export function useKubernetes() {
     setState(prev => ({ ...prev, loading: true }));
     try {
       await k8sApi.switchCluster(clusterId);
-      // Force a full re-fetch after switching cluster
-      const [clusters, namespaces, pods] = await Promise.all([
+
+      // Fetch clusters and namespaces first (essential for context)
+      const [clusters, namespaces] = await Promise.all([
         k8sApi.fetchClusters().catch(e => { console.error(e); return []; }),
         k8sApi.fetchNamespaces().catch(e => { console.error(e); return []; }),
-        k8sApi.fetchPods().catch(e => { console.error(e); return []; }),
       ]);
-      setState({
+
+      setState(prev => ({
+        ...prev,
         connected: true,
         loading: false,
         error: null,
         clusters,
         namespaces,
-        pods,
-      });
+        pods: [], // Clear pods from previous cluster
+      }));
+
+      // Fetch pods in background
+      k8sApi.fetchPods().then(pods => {
+        setState(prev => ({ ...prev, pods }));
+      }).catch(e => console.error('Background pod fetch failed after switch:', e));
+
     } catch (error) {
       console.error('Failed to switch cluster:', error);
-      setState(prev => ({ ...prev, loading: false, error: 'Failed to switch cluster' }));
+      setState(prev => ({
+        ...prev,
+        loading: false,
+        error: error instanceof Error ? error.message : 'Failed to switch cluster'
+      }));
     }
   }, []);
 

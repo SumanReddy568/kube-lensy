@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { FilterPanel } from './FilterPanel';
 import { LogList } from './LogList';
 import { Header } from './Header';
@@ -16,10 +16,29 @@ const initialFilters: FilterState = {
   search: '',
 };
 
+const STORAGE_KEY = 'kubelensy_filters';
+
+const loadFilters = (): FilterState => {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch (e) {
+      console.error('Failed to load filters:', e);
+    }
+  }
+  return initialFilters;
+};
+
 export function LogViewer() {
-  const [filters, setFilters] = useState<FilterState>(initialFilters);
+  const [filters, setFilters] = useState<FilterState>(loadFilters());
   const [isLive, setIsLive] = useState(true);
-  const [showPodDetails, setShowPodDetails] = useState(false);
+  const [showPodDetails, setShowPodDetails] = useState(() => {
+    return localStorage.getItem('kubelensy_show_pod_details') === 'true';
+  });
+  const initialSwitchRef = import.meta.env.DEV ? { current: false } : { current: false }; // We'll use a local ref
+  const hasAttemptedInitialSwitch = useState(false)[0]; // Actually let's use a proper ref
+  const initialSwitchDone = useState(false); // Using state just to be safe with re-renders
 
   // Real Kubernetes connection
   const {
@@ -45,13 +64,29 @@ export function LogViewer() {
     isLive
   );
 
+  // Initial cluster switch if needed to match persisted state
+  useEffect(() => {
+    if (connected && filters.cluster && clusters.length > 0) {
+      const currentConnected = clusters.find(c => c.status === 'connected')?.id;
+      if (currentConnected && currentConnected !== filters.cluster) {
+        console.log(`Auto-switching to last cluster: ${filters.cluster}`);
+        switchCluster(filters.cluster);
+      }
+    }
+  }, [connected, clusters, filters.cluster, switchCluster]);
+
   // Refresh pods when namespace changes
   const handleFilterChange = async (newFilters: FilterState) => {
-    if (newFilters.cluster !== filters.cluster && newFilters.cluster) {
+    const clusterChanged = newFilters.cluster !== filters.cluster;
+
+    if (clusterChanged && newFilters.cluster) {
       await switchCluster(newFilters.cluster);
     }
+
     setFilters(newFilters);
-    if (newFilters.namespace !== filters.namespace) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newFilters));
+
+    if (newFilters.namespace !== filters.namespace || clusterChanged) {
       refreshPods(newFilters.namespace || undefined);
     }
     // Close details if pod changes
@@ -89,7 +124,11 @@ export function LogViewer() {
         filters={filters}
         onRefresh={refresh}
         onClear={clear}
-        onShowDetails={() => setShowPodDetails(!showPodDetails)}
+        onShowDetails={() => {
+          const next = !showPodDetails;
+          setShowPodDetails(next);
+          localStorage.setItem('kubelensy_show_pod_details', String(next));
+        }}
         isLive={isLive}
         connected={connected}
         loading={k8sLoading}
@@ -124,7 +163,10 @@ export function LogViewer() {
           <PodDetailsSidebar
             podName={filters.pod}
             namespace={filters.namespace}
-            onClose={() => setShowPodDetails(false)}
+            onClose={() => {
+              setShowPodDetails(false);
+              localStorage.setItem('kubelensy_show_pod_details', 'false');
+            }}
           />
         )}
       </main>

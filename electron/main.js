@@ -25,6 +25,7 @@ function startServer() {
       ...process.env,
       NODE_ENV: "production",
       ELECTRON_RUN_AS_NODE: "1",
+      USER_DATA_PATH: app.getPath("userData"),
     },
   });
 

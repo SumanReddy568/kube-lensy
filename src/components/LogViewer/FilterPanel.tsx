@@ -253,7 +253,7 @@ export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pod
             </div>
             <Select
               value={filters.pod && filters.namespace ? `${filters.namespace}/${filters.pod}` :
-                filters.pod ? pods.find(p => p.name === filters.pod)?.namespace + "/" + filters.pod : "all-pods"}
+                filters.pod ? (pods.find(p => p.name === filters.pod)?.namespace || "unknown") + "/" + filters.pod : "all-pods"}
               disabled={pods.length === 0}
               onValueChange={(val) => {
                 if (val === "all-pods") {
