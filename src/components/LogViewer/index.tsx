@@ -7,6 +7,7 @@ import { FilterState } from '@/types/logs';
 import { useKubernetes, usePodLogs } from '@/hooks/useKubernetes';
 import { PodDetailsSidebar } from './PodDetailsSidebar';
 import { ErrorSummarySidebar } from './ErrorSummarySidebar';
+import { AIDiagnosticsPanel } from '@/components/AIDiagnostics';
 import { BarChart3 } from 'lucide-react';
 
 const initialFilters: FilterState = {
@@ -43,6 +44,7 @@ export function LogViewer() {
     return localStorage.getItem('kubelensy_show_pod_details') === 'true';
   });
   const [showErrorSummary, setShowErrorSummary] = useState(false);
+  const [showAIDiagnostics, setShowAIDiagnostics] = useState(false);
   //Kubernetes connection
   const {
     connected,
@@ -147,9 +149,21 @@ export function LogViewer() {
         onToggleErrorSummary={() => {
           const next = !showErrorSummary;
           setShowErrorSummary(next);
-          if (next) setShowPodDetails(false);
+          if (next) {
+            setShowPodDetails(false);
+            setShowAIDiagnostics(false);
+          }
         }}
         errorCount={logs.filter(l => l.level === 'error').length}
+        showAIDiagnostics={showAIDiagnostics}
+        onToggleAIDiagnostics={() => {
+          const next = !showAIDiagnostics;
+          setShowAIDiagnostics(next);
+          if (next) {
+            setShowPodDetails(false);
+            setShowErrorSummary(false);
+          }
+        }}
       />
 
       {/* Connection Banner */}
@@ -194,6 +208,12 @@ export function LogViewer() {
               setShowErrorSummary(false);
             }}
           />
+        )}
+
+        {showAIDiagnostics && (
+          <div className="w-[500px] border-l border-border bg-card overflow-hidden">
+            <AIDiagnosticsPanel namespace={filters.namespace || undefined} />
+          </div>
         )}
       </main>
     </div>

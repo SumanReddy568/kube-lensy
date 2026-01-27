@@ -6,6 +6,10 @@ import { promisify } from 'util';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import fixPath from 'fix-path';
+
+// Fix PATH for K8s tools on macOS
+fixPath();
 
 // Kubernetes types
 interface KubernetesNamespace {
@@ -129,14 +133,12 @@ const cacheMiddleware = (ttlMs: number) => (req: Request, res: Response, next: N
     next();
 };
 
-const LOG_FILE = path.join(STORAGE_PATH, 'backend.log');
-const logStream = fs.createWriteStream(LOG_FILE, { flags: 'w' });
+
 
 // Enhanced logging that captures everything to backend.log
 const writeToLog = (type: 'STDOUT' | 'STDERR', msg: string) => {
     const timestamp = new Date().toISOString();
     const formatted = `[${timestamp}] [${type}] ${msg}\n`;
-    logStream.write(formatted);
     if (type === 'STDOUT') {
         process.stdout.write(formatted);
     } else {
@@ -144,14 +146,14 @@ const writeToLog = (type: 'STDOUT' | 'STDERR', msg: string) => {
     }
 };
 
-// Override console methods to capture all logs
+// Use standard console for production-like behavior
 console.log = (msg: any, ...args: any[]) => {
     const output = typeof msg === 'string' ? msg : JSON.stringify(msg);
-    writeToLog('STDOUT', output);
+    process.stdout.write(`[STDOUT] ${output}\n`);
 };
 console.error = (msg: any, ...args: any[]) => {
     const output = typeof msg === 'string' ? msg : JSON.stringify(msg);
-    writeToLog('STDERR', output);
+    process.stderr.write(`[STDERR] ${output}\n`);
 };
 
 // Request logging middleware (must be FIRST)
@@ -527,6 +529,292 @@ app.get('/api/namespaces/:namespace/events', cacheMiddleware(5000), async (req, 
         res.status(500).json({ error: error instanceof Error ? error.message : 'An unknown error occurred' });
     }
 });
+
+// ============= MCP Server Integration =============
+// AI-powered Kubernetes diagnostics
+
+interface MCPRequest {
+    tool: string;
+    arguments?: Record<string, any>;
+}
+
+interface MCPResponse {
+    content: Array<{
+        type: string;
+        text: string;
+    }>;
+    isError?: boolean;
+}
+
+// Spawn MCP server process
+let mcpServerProcess: any = null;
+
+function startMCPServer() {
+    if (mcpServerProcess) return;
+
+    try {
+        // Detect if running from bundled version (dist-server/server.js)
+        // In production bundle, mcp-server.js is in the same directory
+        const bundledMcpPath = path.join(_dirname, 'mcp-server.js');
+        const devMcpPath = path.join(_dirname, 'mcp-server.ts');
+        const distMcpPath = path.join(_dirname, 'dist-server/mcp-server.js');
+
+        let mcpPath: string = '';
+        let command: string = '';
+        // In Electron production, process.execPath is the Electron binary.
+        // We must use it to spawn child processes that need to read from ASAR.
+        // In dev (Node), process.execPath is just 'node'.
+        const nodeExecutable = process.execPath;
+
+        if (fs.existsSync(bundledMcpPath)) {
+            // Running from dist-server/ - mcp-server.js is in same directory (Production)
+            mcpPath = bundledMcpPath;
+            command = nodeExecutable;
+        } else if (fs.existsSync(distMcpPath)) {
+            // Running from project root with dist-server built (Hybrid/Dev)
+            mcpPath = distMcpPath;
+            command = nodeExecutable;
+        } else if (fs.existsSync(devMcpPath)) {
+            // Development mode
+            mcpPath = devMcpPath;
+            command = 'tsx';
+        }
+
+        if (!mcpPath) {
+            console.error(`MCP Server file not found. Checked: ${bundledMcpPath}, ${distMcpPath}, ${devMcpPath}`);
+            return;
+        }
+
+        console.log(`Starting MCP Server: ${command} ${mcpPath}`);
+
+        mcpServerProcess = spawn(command, [mcpPath], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+            env: {
+                ...process.env,
+                PATH: process.env.PATH,
+                ELECTRON_RUN_AS_NODE: '1' // Crucial for Electron to act as Node
+            }
+        });
+
+        mcpServerProcess.stderr.on('data', (data: Buffer) => {
+            const msg = data.toString();
+            console.error(`[MCP Server STDERR] ${msg}`);
+        });
+
+        mcpServerProcess.stdout.on('data', (data: Buffer) => {
+            // Only log if it's not JSON (to avoid cluttering logs with protocol messages)
+            const msg = data.toString();
+            if (!msg.trim().startsWith('{')) {
+                console.log(`[MCP Server STDOUT] ${msg}`);
+            }
+        });
+
+        mcpServerProcess.on('error', (err: Error) => {
+            console.error('[MCP Server Process Error]', err);
+        });
+
+        mcpServerProcess.on('close', (code: number) => {
+            console.log(`MCP Server process exited with code ${code}`);
+            mcpServerProcess = null;
+        });
+
+        console.log('MCP Server spawned successfully');
+    } catch (error) {
+        console.error('Failed to start MCP Server:', error);
+    }
+}
+
+// Start MCP server on initialization
+startMCPServer();
+
+async function callMCPTool(tool: string, args: Record<string, any> = {}): Promise<any> {
+    return new Promise((resolve, reject) => {
+        if (!mcpServerProcess) {
+            startMCPServer();
+            setTimeout(() => {
+                if (!mcpServerProcess) {
+                    return reject(new Error('MCP Server failed to start'));
+                }
+            }, 1000);
+        }
+
+        const request = {
+            jsonrpc: '2.0',
+            id: Date.now(),
+            method: 'tools/call',
+            params: {
+                name: tool,
+                arguments: args
+            }
+        };
+
+        let responseData = '';
+        const timeout = setTimeout(() => {
+            reject(new Error('MCP request timeout'));
+        }, 30000);
+
+        const onData = (data: Buffer) => {
+            responseData += data.toString();
+            try {
+                const response = JSON.parse(responseData);
+                clearTimeout(timeout);
+                mcpServerProcess.stdout.off('data', onData);
+
+                if (response.error) {
+                    reject(new Error(response.error.message || 'MCP error'));
+                } else {
+                    resolve(response.result);
+                }
+            } catch (e) {
+                // Not complete JSON yet, wait for more data
+            }
+        };
+
+        const onExit = (code: number) => {
+            clearTimeout(timeout);
+            mcpServerProcess?.stdout?.off('data', onData);
+            reject(new Error(`MCP Server crashed with code ${code} during request`));
+        };
+
+        mcpServerProcess.once('close', onExit);
+        mcpServerProcess.stdout.on('data', onData);
+        mcpServerProcess.stdin.write(JSON.stringify(request) + '\n');
+
+        // Clean up the exit listener once we have a response
+        const originalResolve = resolve;
+        resolve = (value: any) => {
+            mcpServerProcess?.off('close', onExit);
+            originalResolve(value);
+        };
+        const originalReject = reject;
+        reject = (reason: any) => {
+            mcpServerProcess?.off('close', onExit);
+            originalReject(reason);
+        };
+    });
+}
+
+// AI Diagnostics endpoint - main entry point for natural language queries
+app.post('/api/ai/diagnose', async (req, res) => {
+    const { prompt, namespace } = req.body;
+
+    if (!prompt) {
+        return res.status(400).json({ error: 'Prompt is required' });
+    }
+
+    try {
+        // Parse the prompt to determine which MCP tool to use
+        const tool = determineToolFromPrompt(prompt);
+        const args: Record<string, any> = {};
+
+        if (namespace) args.namespace = namespace;
+
+        // Extract additional parameters from prompt
+        const podMatch = prompt.match(/pod[:\s]+([a-z0-9-]+)/i);
+        if (podMatch) args.podName = podMatch[1];
+
+        const result = await callMCPTool(tool, args);
+
+        res.json({
+            tool,
+            result,
+            prompt
+        });
+    } catch (error: unknown) {
+        console.error('AI Diagnose error:', error);
+        res.status(500).json({
+            error: error instanceof Error ? error.message : 'An unknown error occurred'
+        });
+    }
+});
+
+// Specific diagnostic endpoints
+app.post('/api/ai/cluster-health', async (req, res) => {
+    const { namespace } = req.body;
+
+    try {
+        const result = await callMCPTool('diagnose_cluster', { namespace });
+        res.json(result);
+    } catch (error: unknown) {
+        res.status(500).json({
+            error: error instanceof Error ? error.message : 'An unknown error occurred'
+        });
+    }
+});
+
+app.post('/api/ai/troubleshoot-pod', async (req, res) => {
+    const { podName, namespace } = req.body;
+
+    if (!podName || !namespace) {
+        return res.status(400).json({ error: 'podName and namespace are required' });
+    }
+
+    try {
+        const result = await callMCPTool('troubleshoot_pod', { podName, namespace });
+        res.json(result);
+    } catch (error: unknown) {
+        res.status(500).json({
+            error: error instanceof Error ? error.message : 'An unknown error occurred'
+        });
+    }
+});
+
+app.get('/api/ai/failing-pods', async (req, res) => {
+    const { namespace } = req.query;
+
+    try {
+        const result = await callMCPTool('list_failing_pods', { namespace });
+        res.json(result);
+    } catch (error: unknown) {
+        res.status(500).json({
+            error: error instanceof Error ? error.message : 'An unknown error occurred'
+        });
+    }
+});
+
+app.get('/api/ai/cluster-overview', async (req, res) => {
+    try {
+        const result = await callMCPTool('get_cluster_overview', {});
+        res.json(result);
+    } catch (error: unknown) {
+        res.status(500).json({
+            error: error instanceof Error ? error.message : 'An unknown error occurred'
+        });
+    }
+});
+
+// Helper function to determine which tool to use based on prompt
+function determineToolFromPrompt(prompt: string): string {
+    const lowerPrompt = prompt.toLowerCase();
+
+    if (lowerPrompt.includes('troubleshoot') || lowerPrompt.includes('debug')) {
+        return 'troubleshoot_pod';
+    }
+    if (lowerPrompt.includes('failing') || lowerPrompt.includes('failed')) {
+        return 'list_failing_pods';
+    }
+    if (lowerPrompt.includes('health') || lowerPrompt.includes('check')) {
+        if (lowerPrompt.includes('pod')) {
+            return 'check_pod_health';
+        }
+        return 'diagnose_cluster';
+    }
+    if (lowerPrompt.includes('event')) {
+        return 'analyze_events';
+    }
+    if (lowerPrompt.includes('resource') || lowerPrompt.includes('usage') || lowerPrompt.includes('cpu') || lowerPrompt.includes('memory')) {
+        return 'get_resource_usage';
+    }
+    if (lowerPrompt.includes('log')) {
+        return 'analyze_logs';
+    }
+    if (lowerPrompt.includes('overview') || lowerPrompt.includes('summary')) {
+        return 'get_cluster_overview';
+    }
+
+    // Default to cluster diagnosis
+    return 'diagnose_cluster';
+}
 
 // Serve static files from the Vite build
 const distPath = fs.existsSync(path.join(_dirname, 'dist'))

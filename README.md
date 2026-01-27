@@ -8,6 +8,7 @@ KubeLensy is a high-performance, beautiful, and developer-friendly Kubernetes Lo
 - 📊 **Multi-Cluster Support**: Switch between Kubernetes contexts directly from the UI.
 - 🔍 **Powerful Filtering**: Filter by namespace, pod, container, and log levels.
 - ⚡ **Real-time Streaming**: Watch logs as they happen with auto-scroll support.
+- 🤖 **AI-Powered Diagnostics**: Natural language queries for cluster health and troubleshooting.
 - 🎨 **Modern Interface**: Built with React, Tailwind CSS, and shadcn/ui.
 - 📦 **No Proxy Needed**: Communicates directly with your cluster using an integrated backend.
 
@@ -57,3 +58,28 @@ Now you can just type `kubelensy` any time you need to debug your clusters.
 
 ## Performance & Memory
 KubeLensy is designed for stability. It uses a sliding window (latest 500 lines) for the frontend logs to ensure your browser remains responsive even when streaming high-volume pod logs.
+
+## AI-Powered Diagnostics 🤖
+
+KubeLensy includes an integrated **Kubernetes MCP (Model Context Protocol) Server** that provides intelligent cluster diagnostics through natural language queries.
+
+### Quick Examples:
+- "Check cluster health"
+- "Show me all failing pods"
+- "Troubleshoot pod nginx-abc123"
+- "What's wrong with my cluster?"
+
+### Features:
+- 🔍 Automatic issue detection across pods, nodes, and namespaces
+- 💡 Intelligent recommendations for fixing problems
+- 📊 Comprehensive cluster health analysis
+- 🚨 Real-time event and log analysis
+- 📈 Resource usage monitoring
+
+**[📖 Read the full MCP Integration Guide](./MCP_INTEGRATION.md)** for detailed usage, API reference, and examples.
+
+## Contributing
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+MIT

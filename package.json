@@ -1,23 +1,25 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "0.0.2",
+  "version": "0.0.12",
   "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
     "server": "tsx --watch server.ts",
-    "server:build": "esbuild server.ts --bundle --platform=node --outfile=dist-server/server.js --external:express --external:cors",
+    "server:build": "esbuild server.ts --bundle --platform=node --outfile=dist-server/server.js --external:express --external:cors && esbuild mcp-server.ts --bundle --platform=node --outfile=dist-server/mcp-server.js",
     "dev:all": "concurrently \"npm run server\" \"npm run dev\"",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "start": "npm run build && npm run server",
     "preview": "vite preview",
+    "mcp-server": "tsx mcp-server.ts",
     "electron:dev": "concurrently \"npm run server\" \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "npm run build && npm run server:build && electron-builder"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
+    "@modelcontextprotocol/sdk": "^1.25.3",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
@@ -83,7 +85,7 @@
     "@vitejs/plugin-react-swc": "^3.11.0",
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.2.1",
-    "electron": "^39.2.7",
+    "electron": "^39.3.0",
     "electron-builder": "^26.4.0",
     "esbuild": "^0.27.2",
     "eslint": "^9.32.0",
@@ -105,6 +107,7 @@
     "directories": {
       "output": "release"
     },
+    "icon": "public/k8s.png",
     "files": [
       "dist/**/*",
       "dist-server/**/*",

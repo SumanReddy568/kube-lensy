@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Terminal, RefreshCw, Trash2, Info, Clock, Activity, CheckCircle, AlertTriangle, BarChart3, Bug } from 'lucide-react';
+import { Terminal, RefreshCw, Trash2, Info, Clock, Activity, CheckCircle, AlertTriangle, BarChart3, Bug, Brain } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { FilterState, Pod } from '@/types/logs';
 import { ConnectionStatus } from './ConnectionStatus';
@@ -21,6 +21,8 @@ interface HeaderProps {
   showErrorSummary?: boolean;
   onToggleErrorSummary?: () => void;
   errorCount?: number;
+  showAIDiagnostics?: boolean;
+  onToggleAIDiagnostics?: () => void;
 }
 
 export function Header({
@@ -37,7 +39,9 @@ export function Header({
   selectedPod,
   showErrorSummary,
   onToggleErrorSummary,
-  errorCount
+  errorCount,
+  showAIDiagnostics,
+  onToggleAIDiagnostics
 }: HeaderProps) {
   const [pulseLive, setPulseLive] = useState(false);
   const navigate = useNavigate();
@@ -135,6 +139,19 @@ export function Header({
                 {errorCount > 99 ? '99+' : errorCount}
               </span>
             )}
+          </button>
+          <button
+            onClick={onToggleAIDiagnostics}
+            className={cn(
+              "px-3 py-1.5 flex items-center gap-2 rounded-lg transition-colors text-sm font-medium mr-2",
+              showAIDiagnostics
+                ? "bg-primary/20 text-primary border border-primary/30"
+                : "bg-secondary text-foreground hover:bg-secondary/80"
+            )}
+            title="AI-Powered Diagnostics"
+          >
+            <Brain className="w-4 h-4" />
+            K8s MCP
           </button>
           <button
             onClick={() => navigate('/debug-logs')}
