@@ -38,10 +38,12 @@ function startServer() {
 
   serverProcess.stdout.on("data", (data) => {
     process.stdout.write(`[Backend STDOUT] ${data}`);
+    logStream.write(data);
   });
 
   serverProcess.stderr.on("data", (data) => {
     process.stderr.write(`[Backend STDERR] ${data}`);
+    logStream.write(data);
   });
 
   serverProcess.on("error", (err) => {

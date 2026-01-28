@@ -57,54 +57,64 @@ export function KubernetesProvider({ children }: { children: React.ReactNode }) 
     const checkConnection = useCallback(async (silent = false) => {
         if (!silent) setState(prev => ({ ...prev, loading: true }));
 
-        try {
-            const status = await k8sApi.checkConnection();
+        const maxRetries = silent ? 0 : 5;
+        let lastError = 'Failed to connect to backend';
 
-            if (status.connected) {
-                if (!state.connected || !silent) {
-                    const clusters = await k8sApi.fetchClusters().catch(e => { console.error(e); return []; });
-                    const namespacesResponse = await k8sApi.fetchNamespaces().catch(e => { console.error(e); return []; });
-                    const valNamespaces = Array.isArray(namespacesResponse) ? namespacesResponse : [];
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                const status = await k8sApi.checkConnection();
 
-                    setState(prev => ({
-                        ...prev,
-                        connected: true,
-                        loading: false,
-                        error: null,
-                        clusters: Array.isArray(clusters) ? clusters : [],
-                        namespaces: valNamespaces,
-                    }));
+                if (status.connected) {
+                    if (!state.connected || !silent) {
+                        const [clusters, namespacesResponse] = await Promise.all([
+                            k8sApi.fetchClusters().catch(e => { console.error(e); return []; }),
+                            k8sApi.fetchNamespaces().catch(e => { console.error(e); return []; })
+                        ]);
 
-                    // Fetch pods in background
-                    k8sApi.fetchPods(lastTargetNamespace.current).then(pods => {
-                        setState(prev => ({ ...prev, pods: Array.isArray(pods) ? pods : [] }));
-                    }).catch(e => console.error('Background pod fetch failed:', e));
+                        const valNamespaces = Array.isArray(namespacesResponse) ? namespacesResponse : [];
+
+                        setState(prev => ({
+                            ...prev,
+                            connected: true,
+                            loading: false,
+                            error: null,
+                            clusters: Array.isArray(clusters) ? clusters : [],
+                            namespaces: valNamespaces,
+                        }));
+
+                        // Fetch pods in background
+                        k8sApi.fetchPods(lastTargetNamespace.current).then(pods => {
+                            setState(prev => ({ ...prev, pods: Array.isArray(pods) ? pods : [] }));
+                        }).catch(e => console.error('Background pod fetch failed:', e));
+                    } else {
+                        setState(prev => ({
+                            ...prev,
+                            connected: true,
+                            loading: false,
+                            error: null
+                        }));
+                    }
+                    return; // Success!
                 } else {
-                    setState(prev => ({
-                        ...prev,
-                        connected: true,
-                        loading: false,
-                        error: null
-                    }));
+                    lastError = status.error || 'Not connected';
                 }
-            } else {
-                setState(prev => ({
-                    ...prev,
-                    connected: false,
-                    loading: false,
-                    error: status.error || 'Not connected',
-                }));
+            } catch (error) {
+                lastError = 'Failed to connect to backend';
             }
-        } catch (error) {
-            if (!silent) {
-                setState(prev => ({
-                    ...prev,
-                    connected: false,
-                    loading: false,
-                    error: 'Failed to connect to backend',
-                }));
+
+            if (attempt < maxRetries) {
+                // Wait before retrying (exponential backoff or simple delay)
+                await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
             }
         }
+
+        // If we reached here, all attempts failed
+        setState(prev => ({
+            ...prev,
+            connected: false,
+            loading: false,
+            error: lastError,
+        }));
     }, [state.connected]);
 
     const switchCluster = useCallback(async (clusterId: string) => {
