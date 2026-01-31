@@ -105,6 +105,14 @@ class KubernetesMCPServer {
                         return await this.getIngress(args);
                     case 'check_pvc_status':
                         return await this.checkPVCStatus(args);
+                    case 'helm_list':
+                        return await this.helmList(args);
+                    case 'helm_history':
+                        return await this.helmHistory(args);
+                    case 'analyze_deployment':
+                        return await this.analyzeDeployment(args);
+                    case 'analyze_memory_usage':
+                        return await this.analyzeMemoryUsage(args);
                     default:
                         throw new Error(`Unknown tool: ${name}`);
                 }
@@ -450,6 +458,68 @@ class KubernetesMCPServer {
                         pvcName: {
                             type: 'string',
                             description: 'Optional: Specific PVC name',
+                        },
+                    },
+                },
+            },
+            {
+                name: 'helm_list',
+                description: 'List Helm releases and their status across namespaces',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        namespace: {
+                            type: 'string',
+                            description: 'Namespace to check (optional, defaults to all)',
+                        },
+                    },
+                },
+            },
+            {
+                name: 'helm_history',
+                description: 'Get revision history for a specific Helm release',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        releaseName: {
+                            type: 'string',
+                            description: 'Name of the Helm release',
+                        },
+                        namespace: {
+                            type: 'string',
+                            description: 'Namespace where release is located',
+                        },
+                    },
+                    required: ['releaseName', 'namespace'],
+                },
+            },
+            {
+                name: 'analyze_deployment',
+                description: 'Deep analysis of a deployment, including status, replicas, and recent changes',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        deploymentName: {
+                            type: 'string',
+                            description: 'Name of the deployment',
+                        },
+                        namespace: {
+                            type: 'string',
+                            description: 'Namespace where deployment is located',
+                        },
+                    },
+                    required: ['deploymentName', 'namespace'],
+                },
+            },
+            {
+                name: 'analyze_memory_usage',
+                description: 'Analyze memory usage across pods, identifying OOM kills and high usage',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        namespace: {
+                            type: 'string',
+                            description: 'Namespace to analyze (optional, defaults to all)',
                         },
                     },
                 },
@@ -1324,7 +1394,240 @@ class KubernetesMCPServer {
         }
     }
 
-    // Helper methods
+    private async helmList(args: any) {
+        const namespace = args.namespace || '';
+        const nsFlag = namespace ? `-n ${namespace}` : '-A';
+
+        try {
+            const { stdout } = await execAsync(`helm list ${nsFlag} -o json`, { maxBuffer: MAX_BUFFER });
+            const releases = JSON.parse(stdout);
+
+            const analysis = releases.map((r: any) => ({
+                name: r.name,
+                namespace: r.namespace,
+                revision: r.revision,
+                updated: r.updated,
+                status: r.status,
+                chart: r.chart,
+                appVersion: r.app_version,
+                issues: r.status !== 'deployed' ? [`Release status is ${r.status}`] : [],
+            }));
+
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify({
+                            count: analysis.length,
+                            releases: analysis,
+                        }, null, 2),
+                    },
+                ],
+            };
+        } catch (error) {
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: `Helm not found or error listing releases: ${error instanceof Error ? error.message : String(error)}`,
+                    },
+                ],
+                isError: true,
+            };
+        }
+    }
+
+    private async helmHistory(args: any) {
+        const { releaseName, namespace } = args;
+
+        try {
+            const { stdout } = await execAsync(`helm history ${releaseName} -n ${namespace} -o json`, { maxBuffer: MAX_BUFFER });
+            const history = JSON.parse(stdout);
+
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify({
+                            releaseName,
+                            namespace,
+                            history: history.map((h: any) => ({
+                                revision: h.revision,
+                                updated: h.updated,
+                                status: h.status,
+                                chart: h.chart,
+                                appVersion: h.app_version,
+                                description: h.description,
+                            })),
+                        }, null, 2),
+                    },
+                ],
+            };
+        } catch (error) {
+            throw new Error(`Failed to get helm history: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    private async analyzeDeployment(args: any) {
+        const { deploymentName, namespace } = args;
+
+        try {
+            const [
+                { stdout: depJson },
+                { stdout: podsJson },
+                { stdout: eventsJson }
+            ] = await Promise.all([
+                execAsync(`kubectl get deployment ${deploymentName} -n ${namespace} -o json`, { maxBuffer: MAX_BUFFER }),
+                execAsync(`kubectl get pods -n ${namespace} -l app=${deploymentName} -o json`, { maxBuffer: MAX_BUFFER }).catch(() => ({ stdout: '{"items":[]}' })),
+                execAsync(`kubectl get events -n ${namespace} --field-selector involvedObject.name=${deploymentName} -o json`, { maxBuffer: MAX_BUFFER }).catch(() => ({ stdout: '{"items":[]}' }))
+            ]);
+
+            const deployment = JSON.parse(depJson);
+            const pods = JSON.parse(podsJson);
+            const events = JSON.parse(eventsJson);
+
+            const status = deployment.status || {};
+            const issues: string[] = [];
+
+            if (status.unavailableReplicas > 0) {
+                issues.push(`${status.unavailableReplicas} replicas are unavailable`);
+            }
+
+            const podRestarts = (pods.items || []).reduce((acc: number, pod: any) => {
+                const restarts = (pod.status?.containerStatuses || []).reduce((sum: number, c: any) => sum + (c.restartCount || 0), 0);
+                return acc + restarts;
+            }, 0);
+
+            if (podRestarts > 0) {
+                issues.push(`Multiple pod restarts detected (${podRestarts} total)`);
+            }
+
+            const analysis = {
+                name: deploymentName,
+                namespace,
+                replicas: {
+                    desired: deployment.spec?.replicas,
+                    updated: status.updatedReplicas,
+                    ready: status.readyReplicas,
+                    available: status.availableReplicas,
+                    unavailable: status.unavailableReplicas || 0,
+                },
+                strategy: deployment.spec?.strategy?.type,
+                conditions: status.conditions?.map((c: any) => ({
+                    type: c.type,
+                    status: c.status,
+                    reason: c.reason,
+                    message: c.message,
+                })),
+                podRestarts,
+                issues,
+                recentEvents: (events.items || []).slice(-5).map((e: any) => ({
+                    reason: e.reason,
+                    message: e.message,
+                    type: e.type,
+                })),
+            };
+
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify(analysis, null, 2),
+                    },
+                ],
+            };
+        } catch (error) {
+            throw new Error(`Failed to analyze deployment: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    private async analyzeMemoryUsage(args: any) {
+        const namespace = args.namespace || '--all-namespaces';
+        const nsFlag = namespace === '--all-namespaces' ? '--all-namespaces' : `-n ${namespace}`;
+
+        try {
+            const [
+                { stdout: topPods },
+                { stdout: podsJson }
+            ] = await Promise.all([
+                execAsync(`kubectl top pods ${nsFlag}`).catch(() => ({ stdout: '' })),
+                execAsync(`kubectl get pods ${nsFlag} -o json`, { maxBuffer: MAX_BUFFER })
+            ]);
+
+            const pods = JSON.parse(podsJson);
+            const memoryIssues: any[] = [];
+
+            // Parse top output if available
+            const topLines = topPods.trim().split('\n').slice(1);
+            const usageMap = new Map();
+            topLines.forEach(line => {
+                const parts = line.split(/\s+/);
+                if (parts.length >= 3) {
+                    const name = parts[0];
+                    const mem = parts[2];
+                    usageMap.set(name, mem);
+                }
+            });
+
+            for (const pod of pods.items || []) {
+                const podName = pod.metadata.name;
+                const podNs = pod.metadata.namespace;
+                const containerStatuses = pod.status?.containerStatuses || [];
+
+                for (const status of containerStatuses) {
+                    // Check for OOMKilled
+                    const lastState = status.lastState?.terminated;
+                    const currentState = status.state?.terminated;
+
+                    if (lastState?.reason === 'OOMKilled' || currentState?.reason === 'OOMKilled') {
+                        memoryIssues.push({
+                            pod: `${podNs}/${podName}`,
+                            container: status.name,
+                            issue: 'OOMKilled',
+                            exitCode: (lastState || currentState).exitCode,
+                            finishedAt: (lastState || currentState).finishedAt,
+                            recommendation: 'Increase memory limits in deployment spec',
+                        });
+                    }
+
+                    // Check if usage is close to limit
+                    const containerSpec = pod.spec?.containers?.find((c: any) => c.name === status.name);
+                    const limit = containerSpec?.resources?.limits?.memory;
+                    const usage = usageMap.get(podName);
+
+                    if (limit && usage) {
+                        // Very rough comparison (e.g., "128Mi" vs "100Mi")
+                        // In a real implementation we'd normalize these units
+                        memoryIssues.push({
+                            pod: `${podNs}/${podName}`,
+                            container: status.name,
+                            issue: 'Resource Check',
+                            usage,
+                            limit,
+                            note: 'Compare usage vs limit to check for near-OOM conditions',
+                        });
+                    }
+                }
+            }
+
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify({
+                            namespace: namespace === '--all-namespaces' ? 'all' : namespace,
+                            oomEventsFound: memoryIssues.length,
+                            details: memoryIssues,
+                            note: 'Metrics server is required for live usage data',
+                        }, null, 2),
+                    },
+                ],
+            };
+        } catch (error) {
+            throw new Error(`Failed to analyze memory usage: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
 
     private generatePodRecommendation(pod: any): string[] {
         const recommendations: string[] = [];

@@ -60,6 +60,10 @@ export function AIDiagnosticsPanel({ namespace }: AIDiagnosticsPanelProps) {
         { label: 'Describe Resource', prompt: 'Describe resource [TYPE]/[NAME]' },
         { label: 'Recent Events', prompt: 'Show recent warning events' },
         { label: 'Cluster Summary', prompt: 'Give me a cluster overview' },
+        { label: 'Helm Releases', prompt: 'List all helm releases' },
+        { label: 'Release History', prompt: 'Show history for helm release [NAME]' },
+        { label: 'Analyze Deployment', prompt: 'Analyze deployment [NAME]' },
+        { label: 'Memory Analysis', prompt: 'Analyze memory usage and OOM events' },
     ];
 
     const parseResult = (resultText: string) => {
@@ -204,7 +208,6 @@ export function AIDiagnosticsPanel({ namespace }: AIDiagnosticsPanelProps) {
                 </div>
             );
         }
-
         // Render cluster overview
         if (parsedData.cluster) {
             return (
@@ -213,10 +216,10 @@ export function AIDiagnosticsPanel({ namespace }: AIDiagnosticsPanelProps) {
                     <div className="grid grid-cols-2 gap-4">
                         <Card>
                             <CardHeader>
-                                <CardTitle>Nodes</CardTitle>
+                                <CardTitle className="text-sm">Nodes</CardTitle>
                             </CardHeader>
                             <CardContent>
-                                <div className="space-y-1">
+                                <div className="space-y-1 text-sm">
                                     <div>Total: {parsedData.cluster.nodes.total}</div>
                                     <div className="text-green-600">Ready: {parsedData.cluster.nodes.ready}</div>
                                 </div>
@@ -224,7 +227,7 @@ export function AIDiagnosticsPanel({ namespace }: AIDiagnosticsPanelProps) {
                         </Card>
                         <Card>
                             <CardHeader>
-                                <CardTitle>Namespaces</CardTitle>
+                                <CardTitle className="text-sm">Namespaces</CardTitle>
                             </CardHeader>
                             <CardContent>
                                 <div className="text-2xl font-bold">{parsedData.cluster.namespaces}</div>
@@ -232,10 +235,10 @@ export function AIDiagnosticsPanel({ namespace }: AIDiagnosticsPanelProps) {
                         </Card>
                         <Card>
                             <CardHeader>
-                                <CardTitle>Pods</CardTitle>
+                                <CardTitle className="text-sm">Pods</CardTitle>
                             </CardHeader>
                             <CardContent>
-                                <div className="space-y-1">
+                                <div className="space-y-1 text-sm">
                                     <div>Total: {parsedData.cluster.pods.total}</div>
                                     <div className="text-green-600">Running: {parsedData.cluster.pods.running}</div>
                                     <div className="text-yellow-600">Pending: {parsedData.cluster.pods.pending}</div>
@@ -243,6 +246,147 @@ export function AIDiagnosticsPanel({ namespace }: AIDiagnosticsPanelProps) {
                                 </div>
                             </CardContent>
                         </Card>
+                    </div>
+                </div>
+            );
+        }
+        // Render Helm releases
+        if (parsedData.releases) {
+            return (
+                <div className="space-y-4">
+                    <h3 className="text-lg font-semibold">Helm Releases ({parsedData.count})</h3>
+                    <div className="space-y-2">
+                        {parsedData.releases.map((release: any, idx: number) => (
+                            <Card key={idx}>
+                                <CardHeader className="pb-2">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <CardTitle className="text-sm">{release.name}</CardTitle>
+                                            <CardDescription>{release.namespace} • {release.chart}</CardDescription>
+                                        </div>
+                                        <Badge variant={release.status === 'deployed' ? 'default' : 'destructive'}>
+                                            {release.status}
+                                        </Badge>
+                                    </div>
+                                </CardHeader>
+                                <CardContent className="text-xs space-y-1">
+                                    <div>Revision: {release.revision}</div>
+                                    <div>App Version: {release.appVersion}</div>
+                                    <div className="text-muted-foreground">{release.updated}</div>
+                                    {release.issues && release.issues.length > 0 && (
+                                        <div className="text-red-500 font-semibold mt-1">
+                                            {release.issues.join(', ')}
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        // Render Deployment Analysis
+        if (parsedData.replicas && parsedData.strategy) {
+            return (
+                <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-lg font-semibold">Deployment: {parsedData.name}</h3>
+                        <Badge variant={parsedData.issues.length > 0 ? 'destructive' : 'default'}>
+                            {parsedData.issues.length > 0 ? 'Issues Found' : 'Healthy'}
+                        </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <Card>
+                            <CardHeader className="pb-2 text-sm font-medium">Replicas</CardHeader>
+                            <CardContent className="text-sm">
+                                <div>Desired: {parsedData.replicas.desired}</div>
+                                <div>Ready: {parsedData.replicas.ready}</div>
+                                <div>Available: {parsedData.replicas.available}</div>
+                                <div className={parsedData.replicas.unavailable > 0 ? 'text-red-500 font-bold' : ''}>
+                                    Unavailable: {parsedData.replicas.unavailable}
+                                </div>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardHeader className="pb-2 text-sm font-medium">Restarts</CardHeader>
+                            <CardContent>
+                                <div className={`text-2xl font-bold ${parsedData.podRestarts > 5 ? 'text-red-500' : ''}`}>
+                                    {parsedData.podRestarts}
+                                </div>
+                                <div className="text-xs text-muted-foreground">Total restarts in pod group</div>
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    {parsedData.issues.length > 0 && (
+                        <div className="space-y-2">
+                            <h4 className="text-sm font-semibold">Critical Issues:</h4>
+                            {parsedData.issues.map((issue: string, idx: number) => (
+                                <Alert key={idx} variant="destructive">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <AlertDescription>{issue}</AlertDescription>
+                                </Alert>
+                            ))}
+                        </div>
+                    )}
+
+                    <div className="space-y-2">
+                        <h4 className="text-sm font-semibold">Recent Events:</h4>
+                        <div className="space-y-1">
+                            {parsedData.recentEvents.map((event: any, idx: number) => (
+                                <div key={idx} className="text-xs p-2 rounded bg-muted">
+                                    <span className={`font-semibold ${event.type === 'Warning' ? 'text-yellow-600' : ''}`}>
+                                        [{event.reason}]
+                                    </span> {event.message}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Render Memory Analysis
+        if (parsedData.oomEventsFound !== undefined) {
+            return (
+                <div className="space-y-4">
+                    <h3 className="text-lg font-semibold">Memory Usage & OOM Analysis</h3>
+                    <Alert variant={parsedData.oomEventsFound > 0 ? 'destructive' : 'default'}>
+                        <Brain className="h-4 w-4" />
+                        <AlertDescription>
+                            {parsedData.oomEventsFound === 0
+                                ? 'No OOM issues or high memory threats detected.'
+                                : `Found ${parsedData.oomEventsFound} potential memory issues or OOM kills.`}
+                        </AlertDescription>
+                    </Alert>
+
+                    <div className="space-y-3">
+                        {parsedData.details.map((issue: any, idx: number) => (
+                            <Card key={idx} className={issue.issue === 'OOMKilled' ? 'border-red-500' : ''}>
+                                <CardHeader className="pb-2">
+                                    <div className="flex justify-between items-center">
+                                        <CardTitle className="text-sm">{issue.pod}</CardTitle>
+                                        <Badge variant={issue.issue === 'OOMKilled' ? 'destructive' : 'secondary'}>
+                                            {issue.issue}
+                                        </Badge>
+                                    </div>
+                                    <CardDescription>Container: {issue.container}</CardDescription>
+                                </CardHeader>
+                                <CardContent className="text-xs space-y-1">
+                                    {issue.usage && <div>Current Usage: <span className="font-bold">{issue.usage}</span></div>}
+                                    {issue.limit && <div>Limit: {issue.limit}</div>}
+                                    {issue.exitCode && <div>Exit Code: {issue.exitCode}</div>}
+                                    {issue.finishedAt && <div>Last Event: {issue.finishedAt}</div>}
+                                    {issue.recommendation && (
+                                        <div className="mt-2 text-blue-600 dark:text-blue-400 font-medium">
+                                            💡 Recommendation: {issue.recommendation}
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        ))}
                     </div>
                 </div>
             );
