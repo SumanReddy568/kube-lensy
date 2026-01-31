@@ -53,7 +53,7 @@ export function usePodLogs(
           namespace,
           pod,
           container || undefined,
-          200
+          500
         );
         setLogs(fetchedLogs);
         setLastUpdate(Date.now());
@@ -105,7 +105,7 @@ export function usePodLogs(
         namespace,
         pod,
         container || undefined,
-        200
+        500
       );
       setLogs(fetchedLogs);
       setLastUpdate(Date.now());

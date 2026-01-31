@@ -15,7 +15,7 @@ const initialFilters: FilterState = {
   namespace: null,
   pod: null,
   container: null,
-  levels: ['error', 'warn', 'info', 'debug'],
+  levels: [], // Default to none selected (means show all)
   search: '',
 };
 
@@ -45,6 +45,7 @@ export function LogViewer() {
   });
   const [showErrorSummary, setShowErrorSummary] = useState(false);
   const [showAIDiagnostics, setShowAIDiagnostics] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState<string | undefined>(undefined);
   //Kubernetes connection
   const {
     connected,
@@ -115,7 +116,10 @@ export function LogViewer() {
       if (filters.namespace && log.namespace !== filters.namespace) return false;
       if (filters.pod && log.pod !== filters.pod) return false;
       if (filters.container && log.container !== filters.container) return false;
-      if (!filters.levels.includes(log.level)) return false;
+
+      // If levels is empty, show all logs. Otherwise, filter by selected levels.
+      if (filters.levels.length > 0 && !filters.levels.includes(log.level)) return false;
+
       if (filters.search && !log.message.toLowerCase().includes(filters.search.toLowerCase())) return false;
       return true;
     });
@@ -126,11 +130,37 @@ export function LogViewer() {
     return pods.find(p => p.name === filters.pod && (!filters.namespace || p.namespace === filters.namespace));
   }, [pods, filters.pod, filters.namespace]);
 
+  const handleGlobalRefresh = async () => {
+    // 1. Refresh logs if pod is selected
+    if (filters.pod) {
+      refresh();
+    }
+
+    // 2. Refresh pods if namespace is selected
+    if (filters.namespace) {
+      refreshPods(filters.namespace);
+    }
+
+    // 3. Refresh namespaces
+    refreshNamespaces();
+
+    // 4. Force connection check
+    checkConnection(false);
+  };
+
+  const handleLogDiagnose = (log: any) => {
+    const prompt = `Analyze this log error from pod ${log.pod} in namespace ${log.namespace}: "${log.message}"`;
+    setAiPrompt(prompt);
+    setShowAIDiagnostics(true);
+    setShowPodDetails(false);
+    setShowErrorSummary(false);
+  };
+
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden font-sans">
       <Header
         filters={filters}
-        onRefresh={refresh}
+        onRefresh={handleGlobalRefresh}
         onClear={clear}
         onShowDetails={() => {
           const next = !showPodDetails;
@@ -184,7 +214,11 @@ export function LogViewer() {
       {/* Main Content */}
       <main className="flex-1 flex overflow-hidden relative">
         <div className="flex-1 flex flex-col overflow-hidden">
-          <LogList logs={filteredLogs} searchTerm={filters.search} />
+          <LogList
+            logs={filteredLogs}
+            searchTerm={filters.search}
+            onDiagnoseLog={handleLogDiagnose}
+          />
         </div>
 
         {showPodDetails && filters.pod && filters.namespace && (
@@ -211,8 +245,11 @@ export function LogViewer() {
         )}
 
         {showAIDiagnostics && (
-          <div className="w-[500px] border-l border-border bg-card overflow-hidden">
-            <AIDiagnosticsPanel namespace={filters.namespace || undefined} />
+          <div className="w-[350px] md:w-[450px] lg:w-[500px] border-l border-border bg-card overflow-y-auto flex-shrink-0">
+            <AIDiagnosticsPanel
+              namespace={filters.namespace || undefined}
+              initialPrompt={aiPrompt}
+            />
           </div>
         )}
       </main>

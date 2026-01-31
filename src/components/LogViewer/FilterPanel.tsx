@@ -54,19 +54,6 @@ export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pod
       (!filters.namespace || pod.namespace === filters.namespace)
   );
 
-  const hasActiveFilters = filters.cluster || filters.namespace || filters.pod || filters.search || filters.levels.length > 0;
-
-  const handleClearFilters = () => {
-    onFilterChange({
-      cluster: null,
-      namespace: null,
-      pod: null,
-      container: null,
-      levels: ['error', 'warn', 'info', 'debug'],
-      search: ""
-    });
-  };
-
   const handleLevelChange = (value: string[]) => {
     onFilterChange({
       ...filters,
@@ -130,18 +117,6 @@ export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pod
               DBG
             </ToggleGroupItem>
           </ToggleGroup>
-
-          {hasActiveFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleClearFilters}
-              className="h-9 px-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-            >
-              <X className="w-4 h-4 mr-2" />
-              Clear
-            </Button>
-          )}
         </div>
 
         <Separator className="bg-border/50" />

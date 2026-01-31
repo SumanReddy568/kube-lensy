@@ -21,16 +21,18 @@ interface DiagnosticResult {
 
 interface AIDiagnosticsPanelProps {
     namespace?: string;
+    initialPrompt?: string;
 }
 
-export function AIDiagnosticsPanel({ namespace }: AIDiagnosticsPanelProps) {
-    const [prompt, setPrompt] = useState('');
+export function AIDiagnosticsPanel({ namespace, initialPrompt }: AIDiagnosticsPanelProps) {
+    const [prompt, setPrompt] = useState(initialPrompt || '');
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<DiagnosticResult | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    const handleDiagnose = async () => {
-        if (!prompt.trim()) return;
+    const handleDiagnose = async (overridePrompt?: string) => {
+        const activePrompt = overridePrompt || prompt;
+        if (!activePrompt.trim()) return;
 
         setLoading(true);
         setError(null);
@@ -38,7 +40,7 @@ export function AIDiagnosticsPanel({ namespace }: AIDiagnosticsPanelProps) {
 
         try {
             const data = await aiDiagnosticsService.diagnose({
-                prompt,
+                prompt: activePrompt,
                 namespace,
             });
             setResult(data);
@@ -48,6 +50,13 @@ export function AIDiagnosticsPanel({ namespace }: AIDiagnosticsPanelProps) {
             setLoading(false);
         }
     };
+
+    React.useEffect(() => {
+        if (initialPrompt) {
+            setPrompt(initialPrompt);
+            handleDiagnose(initialPrompt);
+        }
+    }, [initialPrompt]);
 
     const quickActions = [
         { label: 'Cluster Health', prompt: 'Check the overall health of the cluster' },
@@ -401,21 +410,22 @@ export function AIDiagnosticsPanel({ namespace }: AIDiagnosticsPanelProps) {
     };
 
     return (
-        <div className="space-y-4 p-4">
-            <Card>
-                <CardHeader>
-                    <div className="flex items-center gap-2">
-                        <Brain className="h-5 w-5" />
-                        <CardTitle>K8s MCP Diagnostics</CardTitle>
-                    </div>
-                    <CardDescription>
-                        Ask questions about your Kubernetes cluster in natural language
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
+        <div className="flex flex-col h-full">
+            <div className="p-4 border-b bg-muted/50">
+                <div className="flex items-center gap-2">
+                    <Brain className="h-5 w-5 text-primary" />
+                    <h2 className="font-semibold text-base">K8s MCP Diagnostics</h2>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                    Natural language cluster diagnostics
+                </p>
+            </div>
+
+            <div className="p-4 space-y-4">
+                <div className="space-y-4">
                     <div className="flex gap-2">
                         <Input
-                            placeholder="e.g., 'Check cluster health' or 'Show failing pods'"
+                            placeholder="e.g., 'Check cluster health'..."
                             value={prompt}
                             onChange={(e) => setPrompt(e.target.value)}
                             onKeyDown={(e) => {
@@ -425,7 +435,7 @@ export function AIDiagnosticsPanel({ namespace }: AIDiagnosticsPanelProps) {
                             }}
                             disabled={loading}
                         />
-                        <Button onClick={handleDiagnose} disabled={loading || !prompt.trim()}>
+                        <Button onClick={() => handleDiagnose()} disabled={loading || !prompt.trim()}>
                             {loading ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
@@ -434,12 +444,13 @@ export function AIDiagnosticsPanel({ namespace }: AIDiagnosticsPanelProps) {
                         </Button>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
                         {quickActions.map((action, idx) => (
                             <Button
                                 key={idx}
                                 variant="outline"
                                 size="sm"
+                                className="whitespace-nowrap flex-shrink-0 text-xs h-8"
                                 onClick={() => {
                                     setPrompt(action.prompt);
                                 }}
@@ -458,18 +469,20 @@ export function AIDiagnosticsPanel({ namespace }: AIDiagnosticsPanelProps) {
                     )}
 
                     {result && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="text-sm">Results</CardTitle>
-                                <CardDescription>Tool used: {result.tool}</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <ScrollArea className="h-[400px]">{renderDiagnosticResult()}</ScrollArea>
-                            </CardContent>
-                        </Card>
+                        <div className="space-y-4 pt-4 border-t">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-sm font-semibold">Diagnostic Results</h3>
+                                <Badge variant="secondary" className="text-[10px]">
+                                    Tool: {result.tool}
+                                </Badge>
+                            </div>
+                            <div className="space-y-4">
+                                {renderDiagnosticResult()}
+                            </div>
+                        </div>
                     )}
-                </CardContent>
-            </Card>
+                </div>
+            </div>
         </div>
     );
 }

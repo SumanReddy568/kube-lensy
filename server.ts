@@ -136,24 +136,46 @@ const cacheMiddleware = (ttlMs: number) => (req: Request, res: Response, next: N
 
 
 // Enhanced logging that captures everything to backend.log
+const logPath = path.join(STORAGE_PATH, 'backend.log');
+
 const writeToLog = (type: 'STDOUT' | 'STDERR', msg: string) => {
     const timestamp = new Date().toISOString();
     const formatted = `[${timestamp}] [${type}] ${msg}\n`;
+
+    // Write to console
     if (type === 'STDOUT') {
         process.stdout.write(formatted);
     } else {
         process.stderr.write(formatted);
+    }
+
+    // Append to file
+    try {
+        if (!fs.existsSync(STORAGE_PATH)) {
+            fs.mkdirSync(STORAGE_PATH, { recursive: true });
+        }
+        fs.appendFileSync(logPath, formatted);
+    } catch (e) {
+        // Silently fail if file writing is not possible
     }
 };
 
 // Use standard console for production-like behavior
 console.log = (msg: any, ...args: any[]) => {
     const output = typeof msg === 'string' ? msg : JSON.stringify(msg);
-    process.stdout.write(`[STDOUT] ${output}\n`);
+    if (args.length > 0) {
+        writeToLog('STDOUT', output + ' ' + args.map(a => JSON.stringify(a)).join(' '));
+    } else {
+        writeToLog('STDOUT', output);
+    }
 };
 console.error = (msg: any, ...args: any[]) => {
     const output = typeof msg === 'string' ? msg : JSON.stringify(msg);
-    process.stderr.write(`[STDERR] ${output}\n`);
+    if (args.length > 0) {
+        writeToLog('STDERR', output + ' ' + args.map(a => JSON.stringify(a)).join(' '));
+    } else {
+        writeToLog('STDERR', output);
+    }
 };
 
 // Request logging middleware (must be FIRST)

@@ -163,9 +163,10 @@ export function Header({
           <button
             onClick={onRefresh}
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors"
-            title="Refresh logs"
+            title="Refresh everything"
+            disabled={loading}
           >
-            <RefreshCw className="w-5 h-5" />
+            <RefreshCw className={cn("w-5 h-5", loading && "animate-spin text-primary")} />
           </button>
           <button
             onClick={onClear}

@@ -1,15 +1,16 @@
 import { useRef, useEffect, useState } from 'react';
 import { LogEntry } from '@/types/logs';
 import { LogEntryComponent } from './LogEntry';
-import { ArrowDown, Pause, Play } from 'lucide-react';
+import { ArrowDown, Pause, Play, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface LogListProps {
   logs: LogEntry[];
   searchTerm: string;
+  onDiagnoseLog?: (log: LogEntry) => void;
 }
 
-export function LogList({ logs, searchTerm }: LogListProps) {
+export function LogList({ logs, searchTerm, onDiagnoseLog }: LogListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -48,6 +49,19 @@ export function LogList({ logs, searchTerm }: LogListProps) {
       setIsAtBottom(true);
       setHasNewLogs(false);
     }
+  };
+
+  const handleExport = () => {
+    const text = logs.map(l => `[${l.timestamp}] ${l.level.toUpperCase()} ${l.message}`).join('\n');
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `logs-${logs[0]?.pod || 'k8s'}-${new Date().getTime()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   if (logs.length === 0) {
@@ -93,6 +107,15 @@ export function LogList({ logs, searchTerm }: LogListProps) {
               </>
             )}
           </button>
+
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+            title="Download visible logs"
+          >
+            <Download className="w-3 h-3" />
+            <span className="hidden sm:inline">Export</span>
+          </button>
         </div>
       </div>
 
@@ -104,7 +127,12 @@ export function LogList({ logs, searchTerm }: LogListProps) {
       >
         <div className="flex flex-col">
           {logs.map((log) => (
-            <LogEntryComponent key={log.id} log={log} searchTerm={searchTerm} />
+            <LogEntryComponent
+              key={log.id}
+              log={log}
+              searchTerm={searchTerm}
+              onDiagnose={onDiagnoseLog}
+            />
           ))}
         </div>
       </div>
@@ -116,8 +144,8 @@ export function LogList({ logs, searchTerm }: LogListProps) {
           className={cn(
             "absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full shadow-lg transition-all z-50 flex items-center gap-2 font-medium text-sm animate-in fade-in slide-in-from-bottom-4 duration-300",
             hasNewLogs
-              ? "bg-primary text-primary-foreground scale-110 glow-primary"
-              : "bg-secondary text-muted-foreground hover:text-foreground opacity-80"
+              ? "bg-primary text-primary-foreground scale-110 glow-primary border-primary"
+              : "bg-background/80 backdrop-blur-md text-primary border border-primary/50 hover:bg-primary/10 hover:border-primary"
           )}
         >
           {hasNewLogs ? (
