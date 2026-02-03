@@ -322,3 +322,31 @@ export async function fetchPodEvents(namespace: string, pod: string): Promise<Po
     throw error;
   }
 }
+
+export interface PodMetrics {
+  pod: string;
+  namespace: string;
+  cpu: string;
+  memory: string;
+  cpuLimit: string;
+  memoryLimit: string;
+  cpuRequest: string;
+  memoryRequest: string;
+  qosClass: string;
+  nodeName: string;
+  timestamp: number;
+}
+
+export async function fetchPodMetrics(namespace: string, pod: string): Promise<PodMetrics> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/pods/${pod}/metrics?namespace=${namespace}`);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `HTTP ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch pod metrics:', error);
+    throw error;
+  }
+}

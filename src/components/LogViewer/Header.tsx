@@ -122,6 +122,20 @@ export function Header({
             </button>
           )}
 
+          {filters.pod && filters.namespace && (
+            <button
+              onClick={() => navigate(`/metrics/${filters.namespace}/${filters.pod}`)}
+              className={cn(
+                "px-3 py-1.5 flex items-center gap-2 rounded-lg transition-colors text-sm font-medium mr-2",
+                "bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 shadow-sm"
+              )}
+              title="View CPU and Memory Metrics"
+            >
+              <Activity className="w-4 h-4" />
+              Resources
+            </button>
+          )}
+
           <button
             onClick={onToggleErrorSummary}
             className={cn(

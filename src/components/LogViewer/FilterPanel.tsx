@@ -1,4 +1,5 @@
-import { Search, Server, Box, Layers, Container, X, Filter } from 'lucide-react';
+import { Search, Server, Box, Layers, Container, X, Filter, Activity, Zap } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { FilterState, Cluster, Namespace, Pod, LogLevel } from '@/types/logs';
 import { cn } from '@/lib/utils';
 import {
@@ -37,6 +38,7 @@ interface FilterPanelProps {
 }
 
 export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pods, onRefreshNamespaces }: FilterPanelProps) {
+  const navigate = useNavigate();
   const [isAddNamespaceOpen, setIsAddNamespaceOpen] = useState(false);
   const [newNamespace, setNewNamespace] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);

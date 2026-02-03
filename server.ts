@@ -407,6 +407,98 @@ app.get('/api/pods/:pod/events', cacheMiddleware(5000), async (req, res) => {
     }
 });
 
+app.get('/api/pods/:pod/metrics', async (req, res) => {
+    const { pod } = req.params;
+    const { namespace } = req.query;
+    if (!namespace) return res.status(400).json({ error: 'Namespace is required' });
+
+    try {
+        const { stdout } = await execWithTimeout(`kubectl top pod ${pod} -n ${namespace}`, 5000);
+
+        // Parse "kubectl top pod" output
+        // Example:
+        // NAME             CPU(cores)   MEMORY(bytes)
+        // my-pod-123       10m          20Mi
+
+        const lines = stdout.trim().split('\n');
+        if (lines.length < 2) {
+            return res.json({ cpu: '0m', memory: '0Mi', timestamp: Date.now() });
+        }
+
+        const stats = lines[1].split(/\s+/);
+        const cpu = stats[1];
+        const memory = stats[2];
+
+        // Fetch limits, requests, and QoS
+        let cpuLimit = 'none';
+        let memoryLimit = 'none';
+        let cpuRequest = 'none';
+        let memoryRequest = 'none';
+        let qosClass = 'unknown';
+        let nodeName = 'unknown';
+
+        try {
+            const { stdout: podInfo } = await execWithTimeout(`kubectl get pod ${pod} -n ${namespace} -o json`, 5000);
+            const podData = JSON.parse(podInfo);
+            const containers = podData.spec?.containers || [];
+            qosClass = podData.status?.qosClass || 'unknown';
+            nodeName = podData.spec?.nodeName || 'unknown';
+
+            const parseVal = (val: string, type: 'cpu' | 'mem') => {
+                if (!val) return 0;
+                if (type === 'cpu') {
+                    if (val.endsWith('m')) return parseInt(val);
+                    return parseFloat(val) * 1000;
+                } else {
+                    if (val.endsWith('Ki')) return parseFloat(val) / 1024;
+                    if (val.endsWith('Mi')) return parseFloat(val);
+                    if (val.endsWith('Gi')) return parseFloat(val) * 1024;
+                    if (val.endsWith('Ti')) return parseFloat(val) * 1024 * 1024;
+                    return parseFloat(val) / (1024 * 1024);
+                }
+            };
+
+            let tCpuLimit = 0, tMemLimit = 0, tCpuReq = 0, tMemReq = 0;
+            let hCpuLimit = false, hMemLimit = false, hCpuReq = false, hMemReq = false;
+
+            for (const c of containers) {
+                if (c.resources?.limits?.cpu) { hCpuLimit = true; tCpuLimit += parseVal(c.resources.limits.cpu, 'cpu'); }
+                if (c.resources?.limits?.memory) { hMemLimit = true; tMemLimit += parseVal(c.resources.limits.memory, 'mem'); }
+                if (c.resources?.requests?.cpu) { hCpuReq = true; tCpuReq += parseVal(c.resources.requests.cpu, 'cpu'); }
+                if (c.resources?.requests?.memory) { hMemReq = true; tMemReq += parseVal(c.resources.requests.memory, 'mem'); }
+            }
+
+            if (hCpuLimit) cpuLimit = `${tCpuLimit}m`;
+            if (hMemLimit) memoryLimit = `${Math.round(tMemLimit)}Mi`;
+            if (hCpuReq) cpuRequest = `${tCpuReq}m`;
+            if (hMemReq) memoryRequest = `${Math.round(tMemReq)}Mi`;
+        } catch (e) {
+            console.error('Failed to fetch pod details:', e);
+        }
+
+        res.json({
+            pod,
+            namespace,
+            cpu,
+            memory,
+            cpuLimit,
+            memoryLimit,
+            cpuRequest,
+            memoryRequest,
+            qosClass,
+            nodeName,
+            timestamp: Date.now()
+        });
+    } catch (error: unknown) {
+        // If metrics-server is missing or pod is not found
+        console.error('Failed to fetch pod metrics:', error);
+        res.status(500).json({
+            error: error instanceof Error ? error.message : 'Failed to fetch metrics',
+            metricsServerAvailable: false
+        });
+    }
+});
+
 app.get('/api/logs', async (req, res) => {
     const { namespace, pod, container, tailLines = 100 } = req.query;
     if (!namespace || !pod) {

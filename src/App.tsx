@@ -7,6 +7,7 @@ import { KubernetesProvider } from "./contexts/KubernetesContext";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import DebugLogs from "./pages/DebugLogs";
+import PodMetrics from "./pages/PodMetrics";
 
 const queryClient = new QueryClient();
 
@@ -20,6 +21,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/debug-logs" element={<DebugLogs />} />
+            <Route path="/metrics/:namespace/:podName" element={<PodMetrics />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

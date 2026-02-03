@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Info, Activity, Clock, AlertTriangle, ChevronDown, ChevronRight, Box, Shield, Zap, Layout, FileText, Database, Tag } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { fetchPodDescribe, fetchPodEvents, PodEvent } from '@/services/kubernetesApi';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -13,6 +14,7 @@ interface PodDetailsSidebarProps {
 }
 
 export function PodDetailsSidebar({ podName, namespace, onClose }: PodDetailsSidebarProps) {
+    const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<'describe' | 'events'>('describe');
     const [describe, setDescribe] = useState<string>('');
     const [describeSections, setDescribeSections] = useState<DescribeSection[]>([]);
@@ -125,9 +127,18 @@ export function PodDetailsSidebar({ podName, namespace, onClose }: PodDetailsSid
                         </div>
                     </div>
                 </div>
-                <button onClick={onClose} className="p-2 hover:bg-secondary rounded-full transition-colors flex-shrink-0">
-                    <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => navigate(`/metrics/${namespace}/${podName}`)}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary/20 rounded-lg transition-colors text-xs font-bold uppercase tracking-wider border border-primary/20"
+                    >
+                        <Zap className="w-3.5 h-3.5" />
+                        Metrics
+                    </button>
+                    <button onClick={onClose} className="p-2 hover:bg-secondary rounded-full transition-colors flex-shrink-0">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
             </div>
 
             <div className="flex border-b border-border shrink-0 bg-background/30 backdrop-blur-sm">
