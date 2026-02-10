@@ -264,7 +264,7 @@ app.get('/api/namespaces', cacheMiddleware(10000), async (req, res) => {
             kubeconfig.contexts.forEach((ctx: any) => {
                 // Only include if it matches the current cluster to avoid showing "all namespaces" from other clusters
                 if (ctx.context?.cluster === currentClusterName && ctx.context?.namespace) {
-                    manualNamespaces.add(ctx.context.namespace);
+               manualNamespaces.add(ctx.context.namespace);
                 }
             });
         }

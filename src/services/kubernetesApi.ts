@@ -1,3 +1,24 @@
+// --- Keep-Alive Mechanism ---
+let keepAliveInterval: NodeJS.Timeout | null = null;
+const KEEP_ALIVE_PERIOD = 60_000; // 1 minute
+
+function startKeepAlive() {
+  if (keepAliveInterval) return;
+  keepAliveInterval = setInterval(() => {
+    fetch(`${API_BASE_URL}/health`, { method: 'GET' }).catch(() => {});
+  }, KEEP_ALIVE_PERIOD);
+}
+
+function stopKeepAlive() {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+    keepAliveInterval = null;
+  }
+}
+
+// Start keep-alive on module load
+startKeepAlive();
+// --- End Keep-Alive ---
 import { Cluster, Namespace, Pod, LogEntry, LogLevel } from '@/types/logs';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api';
@@ -36,8 +57,17 @@ async function cachedFetch(url: string, ttl = DEFAULT_CACHE_TTL, options?: Reque
   return response;
 }
 
-function clearCache() {
-  apiCache.clear();
+function clearCache(pattern?: string) {
+  if (!pattern) {
+    apiCache.clear();
+    return;
+  }
+  // Remove only cache entries matching the pattern
+  for (const key of Array.from(apiCache.keys())) {
+    if (key.includes(pattern)) {
+      apiCache.delete(key);
+    }
+  }
 }
 // --- End Caching ---
 
@@ -80,7 +110,13 @@ export async function switchCluster(clusterId: string): Promise<void> {
       body: JSON.stringify({ id: clusterId }),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    clearCache(); // Invalidate cache on switch
+    // Invalidate only cluster, namespace, and pod cache
+    clearCache('/clusters');
+    clearCache('/namespaces');
+    clearCache('/pods');
+    // Prefetch namespaces and pods for faster UI
+    fetchNamespaces().catch(() => {});
+    fetchPods().catch(() => {});
   } catch (error) {
     console.error('Failed to switch cluster:', error);
     throw error;
@@ -106,7 +142,9 @@ export async function addManualNamespace(name: string): Promise<void> {
       body: JSON.stringify({ name }),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    clearCache();
+    clearCache('/namespaces');
+    // Prefetch updated namespaces
+    fetchNamespaces().catch(() => {});
   } catch (error) {
     console.error('Failed to add manual namespace:', error);
     throw error;
@@ -224,6 +262,8 @@ export function streamPodLogs(
   const eventSource = new EventSource(url);
   let logBuffer: LogEntry[] = [];
   let flushTimeout: NodeJS.Timeout | null = null;
+  const FLUSH_DELAY = 20; // ms, reduced for faster sync
+  const MAX_BUFFER_SIZE = 10; // flush immediately if buffer reaches this
 
   const flush = () => {
     if (logBuffer.length > 0) {
@@ -240,9 +280,15 @@ export function streamPodLogs(
     const log = parseSingleLogLine(line, 0, namespace, podName, container || 'main', clusterName);
     logBuffer.push(log);
 
-    // Batch updates to avoid too many re-renders
-    if (!flushTimeout) {
-      flushTimeout = setTimeout(flush, 100);
+    // Flush immediately if buffer is large, else use timer
+    if (logBuffer.length >= MAX_BUFFER_SIZE) {
+      if (flushTimeout) {
+        clearTimeout(flushTimeout);
+        flushTimeout = null;
+      }
+      flush();
+    } else if (!flushTimeout) {
+      flushTimeout = setTimeout(flush, FLUSH_DELAY);
     }
   };
 
