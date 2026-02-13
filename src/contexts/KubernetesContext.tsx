@@ -172,7 +172,7 @@ export function KubernetesProvider({ children }: { children: React.ReactNode }) 
             checkConnection(false);
             isInitialMount.current = false;
         }
-        const interval = setInterval(() => checkConnection(true), 30000);
+        const interval = setInterval(() => checkConnection(true), 1000);
         return () => clearInterval(interval);
     }, [checkConnection]);
 
