@@ -192,6 +192,12 @@ app.use(cors());
 app.use(compression());
 app.use(express.json());
 
+// Disable caching for all API routes
+app.use('/api', (req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+});
+
 console.log('!!! KubeLensy Backend Logger Initialized !!!');
 
 // Lightweight health check for connection status polling
@@ -199,7 +205,7 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: Date.now() });
 });
 
-app.get('/api/clusters', cacheMiddleware(60000), async (req, res) => {
+app.get('/api/clusters', async (req, res) => {
     try {
         const [
             { stdout: contextsOutput },
@@ -232,7 +238,7 @@ app.post('/api/clusters/switch', async (req, res) => {
     }
 });
 
-app.get('/api/namespaces', cacheMiddleware(10000), async (req, res) => {
+app.get('/api/namespaces', async (req, res) => {
     try {
         const [
             { stdout: contextsOutput },
@@ -316,7 +322,7 @@ app.post('/api/namespaces/manual', async (req, res) => {
     }
 });
 
-app.get('/api/pods', cacheMiddleware(5000), async (req, res) => {
+app.get('/api/pods', async (req, res) => {
     const { namespace } = req.query;
     try {
         const { stdout: currentContext } = await execWithTimeout('kubectl config current-context', 5000);
@@ -375,7 +381,7 @@ app.get('/api/pods/:pod/describe', async (req, res) => {
     }
 });
 
-app.get('/api/pods/:pod/events', cacheMiddleware(5000), async (req, res) => {
+app.get('/api/pods/:pod/events', async (req, res) => {
     const { pod } = req.params;
     const { namespace } = req.query;
     if (!namespace) return res.status(400).json({ error: 'Namespace is required' });
@@ -624,7 +630,7 @@ app.get('/api/debug/logs/stream', (req, res) => {
     });
 });
 
-app.get('/api/namespaces/:namespace/events', cacheMiddleware(5000), async (req, res) => {
+app.get('/api/namespaces/:namespace/events', async (req, res) => {
     const { namespace } = req.params;
     try {
         const { stdout } = await execWithTimeout(`kubectl get events -n ${namespace} -o json`, 10000);

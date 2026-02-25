@@ -40,6 +40,7 @@ const loadFilters = (): FilterState => {
 export function LogViewer() {
   const [filters, setFilters] = useState<FilterState>(loadFilters());
   const [isLive, setIsLive] = useState(true);
+  const [isStreamingPaused, setIsStreamingPaused] = useState(false);
   const [showPodDetails, setShowPodDetails] = useState(() => {
     return localStorage.getItem('kubelensy_show_pod_details') === 'true';
   });
@@ -59,7 +60,7 @@ export function LogViewer() {
     refreshPods,
     refreshNamespaces,
     appErrors
-  } = useKubernetes(filters.namespace || undefined);
+  } = useKubernetes();
 
   // Real pod logs
   const { logs, loading: logsLoading, refresh, clear, lastUpdate } = usePodLogs(
@@ -68,7 +69,8 @@ export function LogViewer() {
     filters.namespace,
     filters.pod,
     filters.container,
-    isLive
+    isLive,
+    isStreamingPaused
   );
 
   // Initial cluster switch if needed to match persisted state
@@ -194,6 +196,7 @@ export function LogViewer() {
             setShowErrorSummary(false);
           }
         }}
+        isStreamingPaused={isStreamingPaused}
       />
 
       {/* Connection Banner */}
@@ -218,6 +221,8 @@ export function LogViewer() {
             logs={filteredLogs}
             searchTerm={filters.search}
             onDiagnoseLog={handleLogDiagnose}
+            isStreamingPaused={isStreamingPaused}
+            onToggleStreaming={setIsStreamingPaused}
           />
         </div>
 

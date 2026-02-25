@@ -1,3 +1,4 @@
+import { REFRESH_INTERVAL } from '@/config';
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Cluster, Namespace, Pod } from '@/types/logs';
 import * as k8sApi from '@/services/kubernetesApi';
@@ -87,6 +88,11 @@ export function KubernetesProvider({ children }: { children: React.ReactNode }) 
                             setState(prev => ({ ...prev, pods: Array.isArray(pods) ? pods : [] }));
                         }).catch(e => console.error('Background pod fetch failed:', e));
                     } else {
+                        // Even in silent mode, refresh pods
+                        k8sApi.fetchPods(lastTargetNamespace.current).then(pods => {
+                            setState(prev => ({ ...prev, pods: Array.isArray(pods) ? pods : [] }));
+                        }).catch(e => console.error('Background pod fetch failed:', e));
+
                         setState(prev => ({
                             ...prev,
                             connected: true,
@@ -172,7 +178,7 @@ export function KubernetesProvider({ children }: { children: React.ReactNode }) 
             checkConnection(false);
             isInitialMount.current = false;
         }
-        const interval = setInterval(() => checkConnection(true), 1000);
+        const interval = setInterval(() => checkConnection(true), REFRESH_INTERVAL);
         return () => clearInterval(interval);
     }, [checkConnection]);
 

@@ -93,7 +93,7 @@ export async function checkConnection(): Promise<K8sConnectionStatus> {
 
 export async function fetchClusters(): Promise<Cluster[]> {
   try {
-    const response = await cachedFetch(`${API_BASE_URL}/clusters`, 60000); // Cache for 1 minute
+    const response = await fetch(`${API_BASE_URL}/clusters`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } catch (error) {
@@ -125,7 +125,7 @@ export async function switchCluster(clusterId: string): Promise<void> {
 
 export async function fetchNamespaces(): Promise<Namespace[]> {
   try {
-    const response = await cachedFetch(`${API_BASE_URL}/namespaces`, 10000); // Cache for 10 seconds
+    const response = await fetch(`${API_BASE_URL}/namespaces`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } catch (error) {
@@ -157,7 +157,7 @@ export async function fetchPods(namespace?: string): Promise<Pod[]> {
       ? `${API_BASE_URL}/pods?namespace=${namespace}`
       : `${API_BASE_URL}/pods`;
 
-    const response = await cachedFetch(url);
+    const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } catch (error) {
@@ -341,7 +341,7 @@ function parseSingleLogLine(
 
 export async function fetchPodDescribe(namespace: string, pod: string): Promise<string> {
   try {
-    const response = await cachedFetch(`${API_BASE_URL}/pods/${pod}/describe?namespace=${namespace}`);
+    const response = await fetch(`${API_BASE_URL}/pods/${pod}/describe?namespace=${namespace}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.text();
   } catch (error) {
@@ -360,7 +360,7 @@ export interface PodEvent {
 
 export async function fetchPodEvents(namespace: string, pod: string): Promise<PodEvent[]> {
   try {
-    const response = await cachedFetch(`${API_BASE_URL}/pods/${pod}/events?namespace=${namespace}`);
+    const response = await fetch(`${API_BASE_URL}/pods/${pod}/events?namespace=${namespace}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } catch (error) {

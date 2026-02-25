@@ -1,43 +1,59 @@
 import { useRef, useEffect, useState } from 'react';
 import { LogEntry } from '@/types/logs';
 import { LogEntryComponent } from './LogEntry';
-import { ArrowDown, Pause, Play, Download } from 'lucide-react';
+import { ArrowDown, Pause, Play, Download, Wifi, WifiOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface LogListProps {
   logs: LogEntry[];
   searchTerm: string;
   onDiagnoseLog?: (log: LogEntry) => void;
+  isStreamingPaused?: boolean;
+  onToggleStreaming?: (paused: boolean) => void;
 }
 
-export function LogList({ logs, searchTerm, onDiagnoseLog }: LogListProps) {
+export function LogList({ logs, searchTerm, onDiagnoseLog, isStreamingPaused = false, onToggleStreaming }: LogListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [hasNewLogs, setHasNewLogs] = useState(false);
   const prevLogsCount = useRef(logs.length);
+  const scrollPositionRef = useRef(0);
 
-  // Scroll to bottom whenever logs change, if autoScroll is on
+  // Enhanced scroll handling with better position preservation
   useEffect(() => {
-    if (logs.length > prevLogsCount.current) {
-      if (autoScroll && containerRef.current) {
-        containerRef.current.scrollTop = containerRef.current.scrollHeight;
-      } else if (!isAtBottom) {
+    if (autoScroll && !isStreamingPaused && containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      setHasNewLogs(false);
+    } else if (logs.length > prevLogsCount.current) {
+      if (!isAtBottom) {
         setHasNewLogs(true);
+      }
+      // Preserve scroll position when streaming is paused
+      if (isStreamingPaused && containerRef.current) {
+        containerRef.current.scrollTop = scrollPositionRef.current;
       }
     }
     prevLogsCount.current = logs.length;
-  }, [logs, autoScroll, isAtBottom]);
+  }, [logs, autoScroll, isAtBottom, isStreamingPaused]);
 
   const handleScroll = () => {
     if (containerRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+      // Store current scroll position for preservation
+      scrollPositionRef.current = scrollTop;
+      
       // Check if we're near the bottom (within 50px)
       const nearBottom = scrollHeight - scrollTop - clientHeight < 50;
       setIsAtBottom(nearBottom);
 
       if (nearBottom) {
         setHasNewLogs(false);
+      }
+
+      // Auto-pause streaming when user scrolls up from bottom
+      if (!nearBottom && !isStreamingPaused && onToggleStreaming) {
+        onToggleStreaming(true);
       }
     }
   };
@@ -48,6 +64,20 @@ export function LogList({ logs, searchTerm, onDiagnoseLog }: LogListProps) {
       setAutoScroll(true);
       setIsAtBottom(true);
       setHasNewLogs(false);
+      // Resume streaming when jumping to bottom
+      if (isStreamingPaused && onToggleStreaming) {
+        onToggleStreaming(false);
+      }
+    }
+  };
+
+  const toggleStreaming = () => {
+    if (onToggleStreaming) {
+      onToggleStreaming(!isStreamingPaused);
+      // If resuming streaming and auto-scroll is on, scroll to bottom
+      if (isStreamingPaused && autoScroll) {
+        scrollToBottom();
+      }
     }
   };
 
@@ -86,6 +116,30 @@ export function LogList({ logs, searchTerm, onDiagnoseLog }: LogListProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Streaming Control */}
+          <button
+            onClick={toggleStreaming}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors border",
+              isStreamingPaused
+                ? "bg-destructive/10 text-destructive border-destructive/30 hover:bg-destructive/20"
+                : "bg-success/10 text-success border-success/30 hover:bg-success/20"
+            )}
+          >
+            {isStreamingPaused ? (
+              <>
+                <WifiOff className="w-3 h-3" />
+                Streaming Paused
+              </>
+            ) : (
+              <>
+                <Wifi className="w-3 h-3 animate-pulse" />
+                Streaming Live
+              </>
+            )}
+          </button>
+
+          {/* Auto-scroll Control */}
           <button
             onClick={() => setAutoScroll(!autoScroll)}
             className={cn(
@@ -94,11 +148,12 @@ export function LogList({ logs, searchTerm, onDiagnoseLog }: LogListProps) {
                 ? "bg-primary/20 text-primary"
                 : "bg-secondary text-muted-foreground hover:text-foreground"
             )}
+            disabled={isStreamingPaused}
           >
             {autoScroll ? (
               <>
                 <Play className="w-3 h-3" />
-                Auto-scroll On
+                Auto-scroll
               </>
             ) : (
               <>
@@ -137,26 +192,40 @@ export function LogList({ logs, searchTerm, onDiagnoseLog }: LogListProps) {
         </div>
       </div>
 
-      {/* Scroll to Bottom Button */}
+      {/* Scroll to Bottom Button - enhanced with streaming state awareness */}
       {(!isAtBottom || hasNewLogs) && (
         <button
           onClick={scrollToBottom}
           className={cn(
             "absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full shadow-lg transition-all z-50 flex items-center gap-2 font-medium text-sm animate-in fade-in slide-in-from-bottom-4 duration-300",
             hasNewLogs
-              ? "bg-primary text-primary-foreground scale-110 glow-primary border-primary"
+              ? (isStreamingPaused 
+                  ? "bg-orange-500 text-white scale-110 border-orange-500"
+                  : "bg-primary text-primary-foreground scale-110 glow-primary border-primary")
               : "bg-background/80 backdrop-blur-md text-primary border border-primary/50 hover:bg-primary/10 hover:border-primary"
           )}
+          title={isStreamingPaused ? "Resume streaming and jump to bottom" : "Jump to latest logs"}
         >
           {hasNewLogs ? (
-            <>
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-foreground opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary-foreground"></span>
-              </span>
-              New logs below
-              <ArrowDown className="w-4 h-4" />
-            </>
+            isStreamingPaused ? (
+              <>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                </span>
+                Resume & View New Logs
+                <ArrowDown className="w-4 h-4" />
+              </>
+            ) : (
+              <>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-foreground opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary-foreground"></span>
+                </span>
+                New logs below
+                <ArrowDown className="w-4 h-4" />
+              </>
+            )
           ) : (
             <>
               Jump to latest

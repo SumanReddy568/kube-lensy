@@ -23,6 +23,7 @@ interface HeaderProps {
   errorCount?: number;
   showAIDiagnostics?: boolean;
   onToggleAIDiagnostics?: () => void;
+  isStreamingPaused?: boolean;
 }
 
 export function Header({
@@ -41,7 +42,8 @@ export function Header({
   onToggleErrorSummary,
   errorCount,
   showAIDiagnostics,
-  onToggleAIDiagnostics
+  onToggleAIDiagnostics,
+  isStreamingPaused = false
 }: HeaderProps) {
   const [pulseLive, setPulseLive] = useState(false);
   const navigate = useNavigate();
@@ -77,14 +79,27 @@ export function Header({
 
           {isLive && connected && (
             <div className={cn(
-              "flex items-center gap-2 px-3 py-1 bg-success/15 rounded-full border border-success/30 transition-all duration-300",
-              pulseLive && "scale-105 bg-success/30 border-success/50"
+              "flex items-center gap-2 px-3 py-1 rounded-full border transition-all duration-300",
+              isStreamingPaused 
+                ? "bg-orange-500/15 border-orange-500/30"
+                : pulseLive 
+                  ? "scale-105 bg-success/30 border-success/50" 
+                  : "bg-success/15 border-success/30"
             )}>
               <span className={cn(
-                "w-1.5 h-1.5 bg-success rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)]",
-                pulseLive ? "animate-ping" : "animate-pulse"
+                "w-1.5 h-1.5 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)]",
+                isStreamingPaused 
+                  ? "bg-orange-500 animate-pulse"
+                  : pulseLive 
+                    ? "bg-success animate-ping" 
+                    : "bg-success animate-pulse"
               )} />
-              <span className="text-[10px] uppercase tracking-wider font-bold text-success">Live Source</span>
+              <span className={cn(
+                "text-[10px] uppercase tracking-wider font-bold",
+                isStreamingPaused ? "text-orange-600" : "text-success"
+              )}>
+                {isStreamingPaused ? "Stream Paused" : "Live Source"}
+              </span>
             </div>
           )}
         </div>

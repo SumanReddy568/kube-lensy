@@ -13,15 +13,16 @@ export interface K8sState {
   appErrors: Array<{ message: string; count: number; lastSeen: Date }>;
 }
 
-export function useKubernetes(initialNamespace?: string) {
+export function useKubernetes() {
   const context = useKubernetesContext();
 
-  // Handle initial namespace trigger if provided
   useEffect(() => {
-    if (initialNamespace) {
-      context.refreshPods(initialNamespace);
-    }
-  }, [initialNamespace, context.refreshPods]);
+    const interval = setInterval(() => {
+      context.refreshPods();
+    }, 1000); // Refresh pods every second
+
+    return () => clearInterval(interval);
+  }, [context.refreshPods]);
 
   return context;
 }
@@ -32,7 +33,8 @@ export function usePodLogs(
   namespace: string | null,
   pod: string | null,
   container: string | null,
-  isLive: boolean
+  isLive: boolean,
+  isStreamingPaused: boolean = false
 ) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -68,11 +70,26 @@ export function usePodLogs(
     fetchLogs();
   }, [connected, namespace, pod, container]);
 
-  // Live streaming
+  // Live streaming and periodic refresh - now respects isStreamingPaused
   useEffect(() => {
-    if (!isLive || !connected || !namespace || !pod) {
+    if (!isLive || !connected || !namespace || !pod || isStreamingPaused) {
       return;
     }
+
+    const refreshInterval = setInterval(async () => {
+      try {
+        const fetchedLogs = await k8sApi.fetchPodLogs(
+          namespace,
+          pod,
+          container || undefined,
+          500
+        );
+        setLogs(fetchedLogs);
+        setLastUpdate(Date.now());
+      } catch (error) {
+        console.error('Failed to refresh logs:', error);
+      }
+    }, 1000);
 
     const stopStream = k8sApi.streamPodLogs(
       namespace,
@@ -92,8 +109,11 @@ export function usePodLogs(
       }
     );
 
-    return stopStream;
-  }, [isLive, connected, namespace, pod, container, cluster]);
+    return () => {
+      clearInterval(refreshInterval);
+      stopStream();
+    };
+  }, [isLive, connected, namespace, pod, container, cluster, isStreamingPaused]);
 
   const refresh = useCallback(async () => {
     if (!connected || !namespace || !pod) {
