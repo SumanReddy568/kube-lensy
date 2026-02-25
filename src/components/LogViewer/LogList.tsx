@@ -42,13 +42,20 @@ export function LogList({ logs, searchTerm, onDiagnoseLog, isStreamingPaused = f
       const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
       // Store current scroll position for preservation
       scrollPositionRef.current = scrollTop;
-      
+
       // Check if we're near the bottom (within 50px)
       const nearBottom = scrollHeight - scrollTop - clientHeight < 50;
       setIsAtBottom(nearBottom);
 
       if (nearBottom) {
         setHasNewLogs(false);
+        // If user manually scrolls back to the bottom, resume streaming and auto-scroll
+        if (isStreamingPaused && onToggleStreaming) {
+          onToggleStreaming(false);
+        }
+        if (!autoScroll) {
+          setAutoScroll(true);
+        }
       }
 
       // Auto-pause streaming when user scrolls up from bottom
