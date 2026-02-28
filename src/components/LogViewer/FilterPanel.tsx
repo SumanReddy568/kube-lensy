@@ -1,4 +1,4 @@
-import { Search, Server, Box, Layers, Container, X, Filter, Activity, Zap } from 'lucide-react';
+import { Search, Server, Box, Layers, Container, X, Filter, Activity, Zap, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { FilterState, Cluster, Namespace, Pod, LogLevel } from '@/types/logs';
 import { cn } from '@/lib/utils';
@@ -34,10 +34,11 @@ interface FilterPanelProps {
   clusters: Cluster[];
   namespaces: Namespace[];
   pods: Pod[];
+  podsLoading?: boolean;
   onRefreshNamespaces: () => void;
 }
 
-export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pods, onRefreshNamespaces }: FilterPanelProps) {
+export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pods, podsLoading = false, onRefreshNamespaces }: FilterPanelProps) {
   const navigate = useNavigate();
   const [isAddNamespaceOpen, setIsAddNamespaceOpen] = useState(false);
   const [newNamespace, setNewNamespace] = useState("");
@@ -229,12 +230,12 @@ export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pod
           {/* Pod Select */}
           <div className="flex items-center gap-2 min-w-[220px] flex-1">
             <div className={`p-1.5 rounded-md transition-colors ${filters.pod ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-              <Box className="w-3.5 h-3.5" />
+              {podsLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Box className="w-3.5 h-3.5" />}
             </div>
             <Select
               value={filters.pod && filters.namespace ? `${filters.namespace}/${filters.pod}` :
                 filters.pod ? (pods.find(p => p.name === filters.pod)?.namespace || "unknown") + "/" + filters.pod : "all-pods"}
-              disabled={pods.length === 0}
+              disabled={podsLoading || pods.length === 0}
               onValueChange={(val) => {
                 if (val === "all-pods") {
                   onFilterChange({ ...filters, pod: null, container: null });
@@ -250,7 +251,7 @@ export function FilterPanel({ filters, onFilterChange, clusters, namespaces, pod
               }}
             >
               <SelectTrigger className="h-9 w-full bg-background/50 border-muted-foreground/20">
-                <SelectValue placeholder="All Pods" />
+                <SelectValue placeholder={podsLoading ? "Loading pods…" : "All Pods"} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all-pods">All Pods</SelectItem>

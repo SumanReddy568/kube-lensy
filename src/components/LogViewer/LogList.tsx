@@ -185,9 +185,9 @@ export function LogList({ logs, searchTerm, onDiagnoseLog, isStreamingPaused = f
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto scrollbar-thin bg-background p-0"
+        className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin bg-background p-0"
       >
-        <div className="flex flex-col">
+        <div className="flex flex-col min-w-0">
           {logs.map((log) => (
             <LogEntryComponent
               key={log.id}

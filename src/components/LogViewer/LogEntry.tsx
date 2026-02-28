@@ -1,9 +1,24 @@
-import { memo } from 'react';
+import React, { memo } from 'react';
 import { LogEntry as LogEntryType } from '@/types/logs';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
 import { Brain, Copy, Check, Code, ChevronRight, ChevronDown } from 'lucide-react';
 import { useState, useMemo } from 'react';
+import { LOG_TIMEZONE } from '@/config';
+
+const istFormatter = new Intl.DateTimeFormat('en-IN', {
+  timeZone: LOG_TIMEZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+});
+
+function formatIST(date: Date): string {
+  const parts = istFormatter.formatToParts(date);
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? '00';
+  const ms = String(date.getUTCMilliseconds()).padStart(3, '0');
+  return `${get('hour')}:${get('minute')}:${get('second')}.${ms} IST`;
+}
 
 interface LogEntryProps {
   log: LogEntryType;
@@ -14,7 +29,6 @@ interface LogEntryProps {
 function highlightText(text: string, searchTerm: string): React.ReactNode {
   if (!searchTerm) return text;
 
-  // Split search term by spaces to support multi-word highlighting
   const terms = searchTerm.split(/\s+/).filter(t => t.length > 0);
   if (terms.length === 0) return text;
 
@@ -32,18 +46,42 @@ function highlightText(text: string, searchTerm: string): React.ReactNode {
 export const LogEntryComponent = memo(function LogEntryComponent({ log, searchTerm, onDiagnose }: LogEntryProps) {
   const [copied, setCopied] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const displayMessage = useMemo(() => {
+    const singlePass = (s: string): string =>
+      s.replace(/\\\\/g, '\x00ESC\x00')
+       .replace(/\\"/g, '"')
+       .replace(/\\n/g, '\n')
+       .replace(/\\t/g, '\t')
+       .replace(/\x00ESC\x00/g, '\\');
+
+    try {
+      const trimmed = log.message.trim();
+      if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+        return JSON.parse(trimmed) as string;
+      }
+      let result = log.message;
+      for (let i = 0; i < 5; i++) {
+        const next = singlePass(result);
+        if (next === result) break;
+        result = next;
+      }
+      return result;
+    } catch {
+      return log.message;
+    }
+  }, [log.message]);
 
   const jsonContent = useMemo(() => {
-    const trimmed = log.message.trim();
+    const trimmed = displayMessage.trim();
     if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
       try {
-        return JSON.parse(log.message);
+        return JSON.parse(displayMessage);
       } catch (e) {
         return null;
       }
     }
     return null;
-  }, [log.message]);
+  }, [displayMessage]);
 
   const levelBadgeClass = {
     error: 'text-log-error',
@@ -53,7 +91,7 @@ export const LogEntryComponent = memo(function LogEntryComponent({ log, searchTe
   }[log.level];
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(log.message);
+    navigator.clipboard.writeText(displayMessage);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -71,7 +109,7 @@ export const LogEntryComponent = memo(function LogEntryComponent({ log, searchTe
       <div className="flex items-start gap-3">
         {/* Timestamp */}
         <span className="log-timestamp shrink-0 text-xs opacity-70">
-          {format(log.timestamp, 'HH:mm:ss.SSS')}
+          {formatIST(log.timestamp)}
         </span>
 
         {/* Level Badge */}
@@ -89,7 +127,7 @@ export const LogEntryComponent = memo(function LogEntryComponent({ log, searchTe
         {/* Message */}
         <div className="flex-1 min-w-0">
           <div className="flex items-start gap-1">
-            {jsonContent && (
+            {(jsonContent || displayMessage.length > 120) && (
               <button
                 onClick={() => setIsExpanded(!isExpanded)}
                 className="mt-1 p-0.5 hover:bg-muted rounded text-muted-foreground shrink-0"
@@ -98,16 +136,16 @@ export const LogEntryComponent = memo(function LogEntryComponent({ log, searchTe
               </button>
             )}
             <span className={cn(
-              "text-foreground whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed",
-              isExpanded ? "block" : "line-clamp-2 lg:line-clamp-none"
+              "text-foreground break-all font-mono text-[13px] leading-relaxed",
+              isExpanded ? "whitespace-pre-wrap" : (displayMessage.length > 120 ? "line-clamp-3" : "")
             )}>
-              {highlightText(log.message, searchTerm)}
+              {highlightText(displayMessage, searchTerm)}
             </span>
           </div>
 
           {isExpanded && jsonContent && (
-            <div className="mt-2 p-3 bg-card border border-border rounded-md overflow-x-auto">
-              <pre className="text-xs font-mono text-foreground overflow-visible">
+            <div className="mt-2 p-3 bg-card border border-border rounded-md overflow-x-auto max-w-full">
+              <pre className="text-xs font-mono text-foreground whitespace-pre-wrap break-all">
                 {JSON.stringify(jsonContent, null, 2)}
               </pre>
             </div>

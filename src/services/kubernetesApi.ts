@@ -219,7 +219,7 @@ function parseLogText(
     const level = detectLogLevel(message);
 
     return {
-      id: `${pod}-${Date.now()}-${index}`,
+      id: `${pod}-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
       timestamp,
       level,
       message,
@@ -293,9 +293,8 @@ export function streamPodLogs(
   };
 
   eventSource.onerror = (error) => {
-    console.error('EventSource error:', error);
-    onError(new Error('Log stream connection lost'));
-    eventSource.close();
+    console.warn('EventSource connection interrupted, browser will retry automatically:', error);
+    onError(new Error('Log stream connection interrupted, reconnecting…'));
   };
 
   return () => {

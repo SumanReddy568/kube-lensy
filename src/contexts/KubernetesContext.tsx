@@ -6,6 +6,7 @@ import * as k8sApi from '@/services/kubernetesApi';
 interface K8sState {
     connected: boolean;
     loading: boolean;
+    podsLoading: boolean;
     error: string | null;
     clusters: Cluster[];
     namespaces: Namespace[];
@@ -27,6 +28,7 @@ export function KubernetesProvider({ children }: { children: React.ReactNode }) 
     const [state, setState] = useState<K8sState>({
         connected: false,
         loading: true,
+        podsLoading: false,
         error: null,
         clusters: [],
         namespaces: [],
@@ -84,14 +86,16 @@ export function KubernetesProvider({ children }: { children: React.ReactNode }) 
                         }));
 
                         // Fetch pods in background
+                        setState(prev => ({ ...prev, podsLoading: true }));
                         k8sApi.fetchPods(lastTargetNamespace.current).then(pods => {
-                            setState(prev => ({ ...prev, pods: Array.isArray(pods) ? pods : [] }));
-                        }).catch(e => console.error('Background pod fetch failed:', e));
+                            setState(prev => ({ ...prev, pods: Array.isArray(pods) ? pods : [], podsLoading: false }));
+                        }).catch(e => { console.error('Background pod fetch failed:', e); setState(prev => ({ ...prev, podsLoading: false })); });
                     } else {
                         // Even in silent mode, refresh pods
+                        setState(prev => ({ ...prev, podsLoading: true }));
                         k8sApi.fetchPods(lastTargetNamespace.current).then(pods => {
-                            setState(prev => ({ ...prev, pods: Array.isArray(pods) ? pods : [] }));
-                        }).catch(e => console.error('Background pod fetch failed:', e));
+                            setState(prev => ({ ...prev, pods: Array.isArray(pods) ? pods : [], podsLoading: false }));
+                        }).catch(e => { console.error('Background pod fetch failed:', e); setState(prev => ({ ...prev, podsLoading: false })); });
 
                         setState(prev => ({
                             ...prev,
@@ -142,9 +146,10 @@ export function KubernetesProvider({ children }: { children: React.ReactNode }) 
                 pods: [],
             }));
 
+            setState(prev => ({ ...prev, podsLoading: true }));
             k8sApi.fetchPods(lastTargetNamespace.current).then(pods => {
-                setState(prev => ({ ...prev, pods: Array.isArray(pods) ? pods : [] }));
-            }).catch(e => console.error('Background pod fetch failed after switch:', e));
+                setState(prev => ({ ...prev, pods: Array.isArray(pods) ? pods : [], podsLoading: false }));
+            }).catch(e => { console.error('Background pod fetch failed after switch:', e); setState(prev => ({ ...prev, podsLoading: false })); });
 
         } catch (error) {
             const msg = error instanceof Error ? error.message : 'Failed to switch cluster';
@@ -155,11 +160,13 @@ export function KubernetesProvider({ children }: { children: React.ReactNode }) 
 
     const refreshPods = useCallback(async (namespace?: string) => {
         lastTargetNamespace.current = namespace;
+        setState(prev => ({ ...prev, podsLoading: true }));
         try {
             const pods = await k8sApi.fetchPods(namespace);
-            setState(prev => ({ ...prev, pods: Array.isArray(pods) ? pods : [] }));
+            setState(prev => ({ ...prev, pods: Array.isArray(pods) ? pods : [], podsLoading: false }));
         } catch (error) {
             console.error('Failed to refresh pods:', error);
+            setState(prev => ({ ...prev, podsLoading: false }));
         }
     }, []);
 

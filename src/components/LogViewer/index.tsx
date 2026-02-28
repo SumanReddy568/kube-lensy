@@ -51,6 +51,7 @@ export function LogViewer() {
   const {
     connected,
     loading: k8sLoading,
+    podsLoading,
     error: k8sError,
     clusters,
     namespaces,
@@ -211,6 +212,7 @@ export function LogViewer() {
         clusters={clusters}
         namespaces={namespaces}
         pods={pods}
+        podsLoading={podsLoading}
         onRefreshNamespaces={refreshNamespaces}
       />
 

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useKubernetesContext } from '@/contexts/KubernetesContext';
 import { Cluster, Namespace, Pod, LogEntry } from '@/types/logs';
 import * as k8sApi from '@/services/kubernetesApi';
+import { LOG_POLL_INTERVAL, POD_REFRESH_INTERVAL } from '@/config';
 
 export interface K8sState {
   connected: boolean;
@@ -19,7 +20,7 @@ export function useKubernetes() {
   useEffect(() => {
     const interval = setInterval(() => {
       context.refreshPods();
-    }, 1000); // Refresh pods every second
+    }, POD_REFRESH_INTERVAL);
 
     return () => clearInterval(interval);
   }, [context.refreshPods]);
@@ -70,13 +71,21 @@ export function usePodLogs(
     fetchLogs();
   }, [connected, namespace, pod, container]);
 
-  // Live streaming and periodic refresh - now respects isStreamingPaused
+  // Live streaming + 5s polling fallback - respects isStreamingPaused
   useEffect(() => {
     if (!isLive || !connected || !namespace || !pod || isStreamingPaused) {
       return;
     }
 
-    const refreshInterval = setInterval(async () => {
+    const mergeLogs = (prev: LogEntry[], fetched: LogEntry[]): LogEntry[] => {
+      const existingKeys = new Set(prev.map(l => `${l.pod}-${l.timestamp.getTime()}-${l.message}`));
+      const uniqueNew = fetched.filter(l => !existingKeys.has(`${l.pod}-${l.timestamp.getTime()}-${l.message}`));
+      if (uniqueNew.length === 0) return prev;
+      return [...prev, ...uniqueNew].slice(-2000);
+    };
+
+    // Poll /api/logs every 5 seconds to catch any logs the stream may have missed
+    const pollInterval = setInterval(async () => {
       try {
         const fetchedLogs = await k8sApi.fetchPodLogs(
           namespace,
@@ -84,12 +93,12 @@ export function usePodLogs(
           container || undefined,
           500
         );
-        setLogs(fetchedLogs);
+        setLogs(prev => mergeLogs(prev, fetchedLogs));
         setLastUpdate(Date.now());
       } catch (error) {
-        console.error('Failed to refresh logs:', error);
+        console.error('Failed to poll logs:', error);
       }
-    }, 1000);
+    }, LOG_POLL_INTERVAL);
 
     const stopStream = k8sApi.streamPodLogs(
       namespace,
@@ -97,11 +106,7 @@ export function usePodLogs(
       container || undefined,
       cluster || 'local',
       (newLogs) => {
-        setLogs(prev => {
-          const existingIds = new Set(prev.map(l => l.id));
-          const uniqueNew = newLogs.filter(l => !existingIds.has(l.id));
-          return [...prev, ...uniqueNew].slice(-1000);
-        });
+        setLogs(prev => mergeLogs(prev, newLogs));
         setLastUpdate(Date.now());
       },
       (error) => {
@@ -110,7 +115,7 @@ export function usePodLogs(
     );
 
     return () => {
-      clearInterval(refreshInterval);
+      clearInterval(pollInterval);
       stopStream();
     };
   }, [isLive, connected, namespace, pod, container, cluster, isStreamingPaused]);

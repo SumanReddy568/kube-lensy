@@ -1,5 +1,6 @@
-// Timing configuration for real-time updates
-export const REFRESH_INTERVAL = 1000; // Main connection check interval (ms)
+export const REFRESH_INTERVAL = 30_000; // Health check interval (ms)
 export const LOG_REFRESH_INTERVAL = 1; // Log refresh interval for real-time streaming (ms)
+export const LOG_POLL_INTERVAL = 4000; // How often to hit /api/logs as a streaming fallback (ms)
+export const POD_REFRESH_INTERVAL = 30_000; // auto-refresh the pod list (ms)
 export const API_TIMEOUT = 2000; // API request timeout (ms)
-export const RECONNECTION_INTERVAL = 30000; // Fallback reconnection interval (ms)
+export const LOG_TIMEZONE = 'Asia/Kolkata'; // Display timezone for log timestamps (IST = UTC+5:30)
